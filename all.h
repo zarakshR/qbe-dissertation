@@ -77,8 +77,8 @@ struct BSet {
 };
 
 struct Ref {
-	uint type:3;
-	uint val:29;
+	uint type:3; // RTmp, RCon, etc.
+	uint val:29; // val is index into tmp/const/mem pool
 };
 
 enum {
@@ -200,6 +200,7 @@ enum {
 #define isargbh(o) INRANGE(o, Oargsb, Oarguh)
 #define isretbh(j) INRANGE(j, Jretsb, Jretuh)
 
+// instruction class lattice -- word, long, single, double
 enum {
 	Kx = -1, /* "top" class (see usecheck() and clsmerge()) */
 	Kw,
@@ -208,8 +209,12 @@ enum {
 	Kd
 };
 
-#define KWIDE(k) ((k)&1)
-#define KBASE(k) ((k)>>1)
+#define KWIDE(k) (k == Kl || k == Kd) // true if wide (64-bit) type
+#define KBASE(k) (k == Ks || k == Kd) // true if floating-point type
+#define K32BIT 0
+#define K64BIT 1
+#define KINT 0
+#define KFLT 1
 
 struct Op {
 	char *name;
@@ -234,9 +239,10 @@ struct Ins {
 };
 
 struct Phi {
-	Ref to;
-	Ref *arg;
-	Blk **blk;
+	// each phi has `narg` args, with blk[n], arg[n] as src block and ref
+	Ref to; // dst ref
+	Ref *arg; // array of src refs
+	Blk **blk; // array of source blocks
 	uint narg;
 	short cls;
 	uint visit:1;
@@ -244,16 +250,16 @@ struct Phi {
 };
 
 struct Blk {
-	Phi *phi;
+	Phi *phi; // list of phi instructions; NULL if no phis
 	Ins *ins;
 	uint nins;
 	struct {
 		short type;
 		Ref arg;
 	} jmp;
-	Blk *s1;
-	Blk *s2;
-	Blk *link;
+	Blk *s1; // primary successor
+	Blk *s2; // secondary successor (else branch)
+	Blk *link; // next block in program-order
 
 	uint id;
 	uint visit;
@@ -264,11 +270,12 @@ struct Blk {
 	uint nfron;
 	int depth;
 
-	Blk **pred;
+	Blk **pred; // predecessors
 	uint npred;
-	BSet in[1], out[1], gen[1];
-	int nlive[2];
-	int loop;
+
+	BSet in[1], out[1], gen[1]; // live-in, live-out, generated in block
+	int nlive[2]; // number of live-in/live-out
+	int loop; // loop nesting depth
 	char name[NString];
 };
 
@@ -330,13 +337,13 @@ struct Alias {
 
 struct Tmp {
 	char name[NString];
-	Ins *def;
-	Use *use;
-	uint ndef, nuse;
+	Ins *def; // defining instruction
+	Use *use; // uses
+	uint ndef, nuse; // no. of defs and no. of uses
 	uint bid; /* id of a defining block */
-	uint cost;
-	int slot; /* -1 for unset */
-	short cls;
+	uint cost; // spill cost
+	int slot; /* spilled stack slot, -1 for unset */
+	short cls; // type
 	struct {
 		int r;  /* register or -1 */
 		int w;  /* weight */
@@ -391,25 +398,25 @@ struct Lnk {
 };
 
 struct Fn {
-	Blk *start;
-	Tmp *tmp;
-	Con *con;
-	Mem *mem;
+	Blk *start; // blocks in program order
+	Tmp *tmp; // tmps
+	Con *con; // constant pool
+	Mem *mem; // mem accesses
 	int ntmp;
 	int ncon;
 	int nmem;
 	uint nblk;
-	int retty; /* index in typ[], -1 if no aggregate return */
+	int retty; // return type /* index in typ[], -1 if no aggregate return */
 	Ref retr;
-	Blk **rpo;
-	bits reg;
+	Blk **rpo; // blocks in reverse post-order
+	bits reg; // registers used in function
 	int slot;
 	int salign;
 	char vararg;
 	char dynalloc;
 	char leaf;
 	char name[NString];
-	Lnk lnk;
+	Lnk lnk; // linkage information
 };
 
 struct Typ {
@@ -535,6 +542,7 @@ extern Op optab[NOp];
 void parse(FILE *, char *, void (char *), void (Dat *), void (Fn *));
 void printfn(Fn *, FILE *);
 void printref(Ref, Fn *, FILE *);
+void printcon(Con*, FILE*);
 void err(char *, ...) __attribute__((noreturn));
 
 /* abi.c */

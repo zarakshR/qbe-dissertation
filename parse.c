@@ -1245,7 +1245,7 @@ parse(FILE *f, char *path, void dbgfile(char *), void data(Dat *), void func(Fn 
 	}
 }
 
-static void
+void
 printcon(Con *c, FILE *f)
 {
 	switch (c->type) {

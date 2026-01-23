@@ -13,6 +13,7 @@ aggreg(Blk *hd, Blk *b)
 			hd->nlive[k] = b->nlive[k];
 }
 
+// for all tmps involved in the reference, update their `nuse`, `ndef`, `cost`
 static void
 tmpuse(Ref r, int use, int loop, Fn *fn)
 {
@@ -70,6 +71,7 @@ fillcost(Fn *fn)
 		for (p=b->phi; p; p=p->link) {
 			t = &fn->tmp[p->to.val];
 			tmpuse(p->to, 0, 0, fn);
+			// add sum of `p->loop` for each phi-predecessor to cost
 			for (a=0; a<p->narg; a++) {
 				n = p->blk[a]->loop;
 				t->cost += n;
@@ -243,7 +245,7 @@ store(Ref r, int s)
 }
 
 static int
-regcpy(Ins *i)
+isregcpy(Ins *i)
 {
 	return i->op == Ocopy && isreg(i->arg[0]);
 }
@@ -277,7 +279,7 @@ dopm(Blk *b, Ins *i, BSet *v)
 			store(i->to, tmp[t].slot);
 		}
 		bsset(v, i->arg[0].val);
-	} while (i != b->ins && regcpy(i-1));
+	} while (i != b->ins && isregcpy(i-1));
 	bscopy(u, v);
 	if (i != b->ins && (i-1)->op == Ocall) {
 		v->t[0] &= ~T.retregs((i-1)->arg[1], 0);
@@ -429,7 +431,7 @@ spill(Fn *fn)
 		curi = &insb[NIns];
 		for (i=&b->ins[b->nins]; i!=b->ins;) {
 			i--;
-			if (regcpy(i)) {
+			if (isregcpy(i)) {
 				i = dopm(b, i, v);
 				continue;
 			}

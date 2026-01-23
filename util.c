@@ -394,14 +394,16 @@ clsmerge(short *pk, short k)
 	return k1 != k;
 }
 
+// find phi-representative of `t`
 int
 phicls(int t, Tmp *tmp)
 {
 	int t1;
 
 	t1 = tmp[t].phi;
-	if (!t1)
+	if (!t1) {
 		return t;
+	}
 	t1 = phicls(t1, tmp);
 	tmp[t].phi = t1;
 	return t1;
@@ -560,6 +562,7 @@ salloc(Ref rt, Ref rs, Fn *fn)
 void
 bsinit(BSet *bs, uint n)
 {
+	// round `n` up to next multiple of NBit
 	n = (n + NBit-1) / NBit;
 	bs->nt = n;
 	bs->t = alloc(n * sizeof bs->t[0]);
