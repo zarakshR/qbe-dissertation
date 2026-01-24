@@ -209,8 +209,8 @@ enum {
 	Kd
 };
 
-#define KWIDE(k) (k == Kl || k == Kd) // true if wide (64-bit) type
-#define KBASE(k) (k == Ks || k == Kd) // true if floating-point type
+#define KWIDE(k) (k == Kl || k == Kd || k == Kx) // true if wide (64-bit) type
+#define KBASE(k) (k == Ks || k == Kd || k == Kx) // true if floating-point type
 #define K32BIT 0
 #define K64BIT 1
 #define KINT 0
