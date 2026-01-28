@@ -59,7 +59,7 @@ go(int y) {
 main(int ac, void **av) {
 	int i;
 
-	Q = 8;
+	Q = 12;
 	if (ac >= 2)
 		Q = atoi(av[1]);
 	t = calloc(Q, sizeof(int *));
