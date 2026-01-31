@@ -54,7 +54,7 @@ sethint(int t, int r) {
 }
 
 static void
-rcopy(RMap* dst, RMap* src) {
+rmapcpy(RMap* dst, RMap* src) {
     memcpy(dst->t, src->t, sizeof dst->t);
     memcpy(dst->r, src->r, sizeof dst->r);
     memcpy(dst->w, src->w, sizeof dst->w);
@@ -138,7 +138,7 @@ ralloctry(RMap* map, int t, int try) {
     // if no hint, or hinted reg currently allocated somewhere else
     if (r == -1 || bshas(map->mapped, r)) {
         if (try) {
-            return R; // alloc failed
+            return R; // not allocated
         }
 
         bits avoid = tmp[phicls(t, tmp)].hint.m;
@@ -347,41 +347,22 @@ dopm(Blk* b, Ins* i, RMap* map) {
     return i;
 }
 
+// priority for return 1 if `r1` has higher priority else 0
 static int
 prio1(Ref r1, Ref r2) {
     /* trivial heuristic to begin with,
      * later we can use the distance to
      * the definition instruction
      */
-    // (void) r2;
-    // return *hint(r1.val) != -1;
-
-    if (rtype(r1) == RTmp && rtype(r2) == RTmp) {
-        Tmp t1 = tmp[r1.val];
-        Tmp t2 = tmp[r2.val];
-
-        int h1 = *hint(r1.val);
-        int h2 = *hint(r2.val);
-
-        if (h1 == -1 && h2 != -1) {
-            return -1;
-        }
-
-        if (h1 != -1 && h2 == -1) {
-            return 1;
-        }
-
-        return t1.nuse - t2.nuse;
-    }
-
+    (void) r2;
     return *hint(r1.val) != -1;
 }
 
 static void
 insert(Ref* r, Ref** rs, int p) {
-    int i;
+    int i = p;
 
-    rs[i = p] = r;
+    rs[i] = r;
     while (i-- > 0 && prio1(*r, *rs[i])) {
         rs[i + 1] = rs[i];
         rs[i] = r;
@@ -437,7 +418,9 @@ doblk(Blk* b, RMap* cur) {
                 }
                 break;
         }
-        for (x = 0, nr = 0; x < 2; x++)
+
+        // collect all tmp args used in instruction into `ra`
+        for (x = 0, nr = 0; x < 2; x++) {
             switch (rtype(i->arg[x])) {
                 case RMem:
                     m = &mem[i->arg[x].val];
@@ -450,8 +433,13 @@ doblk(Blk* b, RMap* cur) {
                     insert(&i->arg[x], ra, nr++);
                     break;
             }
-        for (r = 0; r < nr; r++)
+        }
+
+        for (r = 0; r < nr; r++) {
             *ra[r] = ralloc(cur, ra[r]->val);
+        }
+
+        // (??) why doesn't this skip `emit`?
         if (i->op == Ocopy && req(i->to, i->arg[0]))
             curi++;
 
@@ -496,6 +484,8 @@ carve(const void* a, const void* b) {
 // return > 0 if `t1` has more prio than `t2`
 static int
 prio2(int t1, int t2) {
+    assert(tmp[t1].visit == -1 || tmp[t1].visit > 0);
+    assert(tmp[t2].visit == -1 || tmp[t2].visit > 0);
     if ((tmp[t1].visit ^ tmp[t2].visit) < 0) /* != signs */
         return tmp[t1].visit != -1 ? +1 : -1;
     if ((*hint(t1) ^ *hint(t2)) < 0)
@@ -508,24 +498,15 @@ prio2(int t1, int t2) {
  */
 // pre-invariant: IR has no more live temporaries (at any program point) than there are machine registers
 // at this point, liveness contains info about which temporaries must be in registers
+// post-invariant, b->in contains tmps that have been assigned to registers
 void
 rega(Fn* fn) {
+    // scratch data
     int j, t, r, x;
-    int rl[Tmp0]; // register list??
-
-    Blk* b,* b1,* s,*** ps,* blist,** blk,** bp;
+    uint u, n;
 
     // end[n]/beg[n] is the register mapping at the end/start of block n
     RMap* end,* beg;
-
-    // scratch data
-    RMap cur;
-    RMap old;
-    RMap* m;
-    Ins* i;
-    Phi* p;
-    uint u, n;
-    Ref src, dst;
 
     /* 1. setup */
     stmov = 0;
@@ -533,15 +514,12 @@ rega(Fn* fn) {
     regu = 0;
     tmp = fn->tmp;
     mem = fn->mem;
-    blk = alloc(fn->nblk * sizeof blk[0]);
     end = alloc(fn->nblk * sizeof end[0]);
     beg = alloc(fn->nblk * sizeof beg[0]);
     for (n = 0; n < fn->nblk; n++) {
         bsinit(end[n].mapped, fn->ntmp);
         bsinit(beg[n].mapped, fn->ntmp);
     }
-    bsinit(cur.mapped, fn->ntmp);
-    bsinit(old.mapped, fn->ntmp);
 
     loop = INT_MAX;
     for (t = 0; t < fn->ntmp; t++) {
@@ -550,52 +528,21 @@ rega(Fn* fn) {
         tmp[t].visit = -1;
     }
 
+    Blk** blk = alloc(fn->nblk * sizeof blk[0]);
     // initialize `blk` array from `b` linked list; `blk` will contain blocks in program order
-    for (bp = blk, b = fn->start; b; b = b->link) {
-        *bp++ = b;
-    } {
-        // NOTE: DEBUG print tmp info.
-        // fprintf(stderr, "TEMPS:\n");
-        // for (int i = Tmp0; i < fn->ntmp; i++) {
-        // 	fprintf(stderr, "[%d]: %s\n", i, fn->tmp[i].name);
-        // }
-
-        // NOTE: DEBUG print constant pool info.
-        // fprintf(stderr, "CONSTANTS:\n");
-        // for (int i = 0; i < fn->ncon; i++) {
-        // 	fprintf(stderr, "[%d]: ", i);
-        // 	printcon(&fn->con[i], stderr);
-        // 	fprintf(stderr, "\n");
-        // }
-
-        // NOTE: DEBUG print phi info. for all blocks
-        // fprintf(stderr, "PHI INFO:\n");
-        // for (uint i = 0; i < fn->nblk; i++) {
-        // 	Blk* b = blk[i];
-        // 	fprintf(stderr, "@%s\n", b->name);
-        // 	for (Phi* phi = b->phi; phi != NULL; phi = phi->link) {
-        // 		fprintf(stderr, "\t(%d:%d) <- ", phi->to.val, phi->to.type);
-        // 		for (uint i = 0; i < phi->narg; i++) {
-        // 			fprintf(stderr, "[%d:%d @%s] ", phi->arg[i].val, phi->arg[i].type, phi->blk[i]->name);
-        // 		}
-        // 		fprintf(stderr, "\n");
-        // 	}
-        // }
-
-        // NOTE: reverse post order block names
-        // fprintf(stderr, "RPO:\n");
-        // for (uint i = 0; i < fn->nblk; i++) {
-        // 	fprintf(stderr, "%s ", fn->rpo[i]->name);
-        // }
-        // fprintf(stderr, "\n");
+    {
+        int i = 0;
+        for (Blk* b = fn->start; b; b = b->link) { blk[i++] = b; }
     }
 
     // sort blocks by loop nesting-depth; most nested loop first
     qsort(blk, fn->nblk, sizeof blk[0], carve);
 
+    // {
     // NOTE: DEBUG print phi info for each tmp
     // for (int i = Tmp0; i < fn->ntmp; i++) {
     // 	fprintf(stderr, "[%d] %s: %d\n", i, tmp[i].name, tmp[i].phi);
+    // }
     // }
 
     // process register hints (for loading from parameters into locals)
@@ -610,23 +557,24 @@ rega(Fn* fn) {
         sethint(ins.to.val, ins.arg[0].val);
     }
 
-    /* 2. allocate registers */
+    /* 2. allocate registers starting from block end */
     for (uint i = 0; i < fn->nblk; i++) {
         Blk* b = blk[i];
         loop = b->loop;
 
-        // zero initialize an RMap
+        // zero initialize `cur`
+        RMap cur;
+        bsinit(cur.mapped, fn->ntmp);
         cur.n = 0;
         bszero(cur.mapped);
         memset(cur.w, 0, sizeof cur.w);
 
-        // WARNING: in/out now contains tmps that MUST be in registers at block boundaries
-        // assign out tmps first
-        // for all tmps in `b->out` ... (`x` tracks total number of registers allocated so far)
-        // `rl` maps tmps to registers in decreasing priority
+        // `rl` 0 .. `x` inclusive contains tmps that must be in registers (post-spill invariant)
+        int rl[Tmp0];
+
+        // `x` tracks total number of registers allocated so far
         for (x = 0, t = Tmp0; bsiter(b->out, &t); t++) {
             j = x++;
-            // `j`'th register assigned to tmp `t`
             rl[j] = t;
             // bubble `t` down to its correct spot
             while (j-- > 0 && prio2(t, rl[j]) > 0) {
@@ -635,6 +583,7 @@ rega(Fn* fn) {
             }
         }
 
+        // (??) registers are mapped to themselves
         for (r = 0; bsiter(b->out, &r) && r < Tmp0; r++) { radd(&cur, r, r); }
 
         // for each assigned register, allocate a register
@@ -642,45 +591,45 @@ rega(Fn* fn) {
         for (j = 0; j < x; j++) { ralloc(&cur, rl[j]); }
 
         // end <- cur
-        rcopy(&end[b->id], &cur);
+        rmapcpy(&end[b->id], &cur);
 
         doblk(b, &cur);
         bscopy(b->in, cur.mapped);
 
-        // (??) remove phis
-        for (p = b->phi; p; p = p->link) {
+        // remove any tmps defined by phis from `b->in`
+        for (Phi* p = b->phi; p; p = p->link) {
             if (rtype(p->to) == RTmp) { bsclr(b->in, p->to.val); }
         }
 
         // beg <- cur
-        rcopy(&beg[b->id], &cur);
+        rmapcpy(&beg[b->id], &cur);
     }
 
     /* 3. emit copies shared by multiple edges
      * to the same block */
     // for each block `s` in program order
-    for (s = fn->start; s; s = s->link) {
-        // only consider blocks with multiple predecessors (TODO: breaking this condition doesn't break tests??)
-        if (s->npred <= 1) { continue; }
-        m = &beg[s->id];
+    for (Blk* b = fn->start; b; b = b->link) {
+        // only consider blocks with multiple predecessors
+        if (b->npred <= 1) { continue; }
+
+        RMap* map = &beg[b->id];
 
         /* rl maps a register that is live at the
-         * beginning of s to the one used in all
+         * beginning of b to the one used in all
          * predecessors (if any, -1 otherwise) */
-        memset(rl, 0, sizeof rl);
+        int rl[Tmp0] = {0};
 
         /* to find the register of a phi in a
          * predecessor, we have to find the
          * corresponding argument */
-        // for each phi in `s` ...
-        for (p = s->phi; p; p = p->link) {
-            if (rtype(p->to) != RTmp || (r = rfind(m, p->to.val)) == -1) { continue; }
+        for (Phi* p = b->phi; p; p = p->link) {
+            if (rtype(p->to) != RTmp || (r = rfind(map, p->to.val)) == -1) { continue; }
 
             for (u = 0; u < p->narg; u++) {
-                b = p->blk[u];
-                src = p->arg[u];
+                Blk* srcblk = p->blk[u];
+                Ref src = p->arg[u];
                 if (rtype(src) != RTmp) { continue; }
-                x = rfind(&end[b->id], src.val);
+                x = rfind(&end[srcblk->id], src.val);
                 if (x == -1) {
                     /* spilled */
                     continue;
@@ -691,12 +640,12 @@ rega(Fn* fn) {
         }
 
         /* process non-phis temporaries */
-        for (j = 0; j < m->n; j++) {
-            t = m->t[j];
-            r = m->r[j];
+        for (j = 0; j < map->n; j++) {
+            t = map->t[j];
+            r = map->r[j];
             if (rl[r] || t < Tmp0 /* todo, remove this */) { continue; }
-            for (bp = s->pred; bp < &s->pred[s->npred]; bp++) {
-                x = rfind(&end[(*bp)->id], t);
+            for (Blk** pred = b->pred; pred < &b->pred[b->npred]; pred++) {
+                x = rfind(&end[(*pred)->id], t);
                 if (x == -1) /* spilled */
                     continue;
                 rl[r] = (!rl[r] || rl[r] == x) ? x : -1;
@@ -705,15 +654,15 @@ rega(Fn* fn) {
         }
 
         npm = 0;
-        for (j = 0; j < m->n; j++) {
-            t = m->t[j];
-            r = m->r[j];
+        for (j = 0; j < map->n; j++) {
+            t = map->t[j];
+            r = map->r[j];
             x = rl[r];
             assert(x != 0 || t < Tmp0 /* todo, ditto */);
-            if (x > 0 && !bshas(m->mapped, x)) {
+            if (x != -1 && !bshas(map->mapped, x)) {
                 pmadd(TMP(x), TMP(r), tmp[t].cls);
-                m->r[j] = x;
-                bsset(m->mapped, x);
+                map->r[j] = x;
+                bsset(map->mapped, x);
             }
         }
         curi = &insb[NIns];
@@ -721,16 +670,16 @@ rega(Fn* fn) {
         j = &insb[NIns] - curi;
         if (j == 0) { continue; }
         stmov += j;
-        s->nins += j;
-        i = alloc(s->nins * sizeof(Ins));
-        icpy(icpy(i, curi, j), s->ins, s->nins - j);
-        s->ins = i;
+        b->nins += j;
+        Ins* ins = alloc(b->nins * sizeof(Ins));
+        icpy(icpy(ins, curi, j), b->ins, b->nins - j);
+        b->ins = ins;
     }
 
     if (debug['R']) {
         fprintf(stderr, "\n> Register mappings:\n");
         for (n = 0; n < fn->nblk; n++) {
-            b = fn->rpo[n];
+            Blk* b = fn->rpo[n];
             fprintf(stderr, "\t%-10s beg", b->name);
             mdump(&beg[n]);
             fprintf(stderr, "\t           end");
@@ -741,13 +690,16 @@ rega(Fn* fn) {
 
     /* 4. emit remaining copies in new blocks */
     // for each block `b` in program-order
-    blist = 0;
-    for (b = fn->start;; b = b->link) {
-        ps = (Blk**[3]){&b->s1, &b->s2, (Blk*[1]){0}};
-        for (; (s = **ps); ps++) {
+    Blk* blist = 0;
+    for (Blk* b = fn->start; /* */ ; b = b->link) {
+        Blk*** succs = (Blk**[3]){&b->s1, &b->s2, (Blk*[1]){0}};
+
+        succs--;
+        while (**++succs) {
+            Blk* s = **succs;
             npm = 0;
-            for (p = s->phi; p; p = p->link) {
-                dst = p->to;
+            for (Phi* p = s->phi; p; p = p->link) {
+                Ref dst = p->to;
                 assert(rtype(dst)==RSlot || rtype(dst)==RTmp);
                 if (rtype(dst) == RTmp) {
                     r = rfind(&beg[s->id], dst.val);
@@ -755,32 +707,32 @@ rega(Fn* fn) {
                     dst = TMP(r);
                 }
                 for (u = 0; p->blk[u] != b; u++) { assert(u+1 < p->narg); }
-                src = p->arg[u];
+                Ref src = p->arg[u];
                 if (rtype(src) == RTmp) { src = rref(&end[b->id], src.val); }
                 pmadd(src, dst, p->cls);
             }
             for (t = Tmp0; bsiter(s->in, &t); t++) {
-                src = rref(&end[b->id], t);
-                dst = rref(&beg[s->id], t);
+                Ref src = rref(&end[b->id], t);
+                Ref dst = rref(&beg[s->id], t);
                 pmadd(src, dst, tmp[t].cls);
             }
             curi = &insb[NIns];
             pmgen();
-            if (curi == &insb[NIns])
-                continue;
-            b1 = newblk();
-            b1->loop = (b->loop + s->loop) / 2;
-            b1->link = blist;
-            blist = b1;
+            if (curi == &insb[NIns]) { continue; }
+            Blk* new = newblk();
+            new->loop = (b->loop + s->loop) / 2;
+            new->link = blist;
+            blist = new;
             fn->nblk++;
-            strf(b1->name, "%s_%s", b->name, s->name);
+            strf(new->name, "%s_%s", b->name, s->name);
             stmov += &insb[NIns] - curi;
             stblk += 1;
-            idup(b1, curi, &insb[NIns] - curi);
-            b1->jmp.type = Jjmp;
-            b1->s1 = s;
-            **ps = b1;
+            idup(new, curi, &insb[NIns] - curi);
+            new->jmp.type = Jjmp;
+            new->s1 = s;
+            **succs = new;
         }
+
         if (!b->link) {
             b->link = blist;
             break;
@@ -788,7 +740,7 @@ rega(Fn* fn) {
     }
 
     // destroy all phis
-    for (b = fn->start; b; b = b->link) { b->phi = 0; }
+    for (Blk* b = fn->start; b; b = b->link) { b->phi = 0; }
 
     // set registers used
     fn->reg = regu;

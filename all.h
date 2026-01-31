@@ -256,13 +256,13 @@ struct Blk {
 	struct {
 		short type;
 		Ref arg;
-	} jmp;
+	} jmp; // terminating jmp
 	Blk *s1; // primary successor
 	Blk *s2; // secondary successor (else branch)
 	Blk *link; // next block in program-order
 
-	uint id;
-	uint visit;
+	uint id; // block id, incrementing in rpo order
+	uint visit; // general purpose, for graph traversals
 
 	Blk *idom;
 	Blk *dom, *dlink;
@@ -274,7 +274,7 @@ struct Blk {
 	uint npred;
 
 	BSet in[1], out[1], gen[1]; // live-in, live-out, generated in block
-	int nlive[2]; // number of live-in/live-out
+	int nlive[2]; // number of live tmps, by class [gpr, fpr]
 	int loop; // loop nesting depth
 	char name[NString];
 };
