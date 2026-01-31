@@ -12,7 +12,7 @@ struct RMap {
     int t[Tmp0];
     int r[Tmp0];
     int w[Tmp0]; /* wait list, for unmatched hints */
-    BSet mapped[1]; // bshas(b, t) if tmp `t` has mapping; bshas(b, r) if reg `r` already allocated
+    BSet mapped[1]; // bshas(mapped, t) if tmp `t` has mapping; bshas(mapped, r) if reg `r` already allocated
     int n; // no. of mappings in `t`/`r`
 };
 
@@ -130,12 +130,12 @@ ralloctry(RMap* map, int t, int try) {
     // last register allocated to this tmp
     int r = tmp[t].visit;
 
-    // if none, or if register currently allocated somewhere else, use hinted reg
+    // if none, or if currently allocated somewhere else, use hinted reg
     if (r == -1 || bshas(map->mapped, r)) {
         r = *hint(t);
     }
 
-    // if no hint, or if hinted reg currently allocated somewhere else
+    // if no hint, or hinted reg currently allocated somewhere else
     if (r == -1 || bshas(map->mapped, r)) {
         if (try) {
             return R; // alloc failed
@@ -153,12 +153,19 @@ ralloctry(RMap* map, int t, int try) {
             end = start + T.nfpr;
         }
 
+        // try allocate reg that does not have avoid hint
         for (r = start; r < end; r++) {
-            // if not in avoid list
-            if (avoid & BIT(r) || bshas(map->mapped, r)) { continue; }
+            if (avoid && BIT(r)) { continue; }
             return ralloctmp(map, t, r);
         }
 
+        // if none, try allocate reg that is not yet mapped
+        for (r = start; r < end; r++) {
+            if (bshas(map->mapped, r)) { continue; }
+            return ralloctmp(map, t, r);
+        }
+
+        // else ran out of reisters
         die("no more regs");
     }
 
