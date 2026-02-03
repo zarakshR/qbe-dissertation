@@ -1,22 +1,23 @@
 #include "all.h"
 
+// set `t` in `v` if `t` is a phi-argument to `succ` from `b`
 void
-liveon(BSet *v, Blk *b, Blk *s)
-{
-	Phi *p;
-	uint a;
-
-	bscopy(v, s->in);
-	for (p=s->phi; p; p=p->link)
-		if (rtype(p->to) == RTmp)
+liveon(BSet* v, Blk* b, Blk* succ) {
+	bscopy(v, succ->in);
+	for (const Phi* p = succ->phi; p; p = p->link) {
+		if (rtype(p->to) == RTmp) {
 			bsclr(v, p->to.val);
-	for (p=s->phi; p; p=p->link)
-		for (a=0; a<p->narg; a++)
-			if (p->blk[a] == b)
-			if (rtype(p->arg[a]) == RTmp) {
+		}
+	}
+
+	for (const Phi* p = succ->phi; p; p = p->link) {
+		for (uint a = 0; a < p->narg; a++) {
+			if (p->blk[a] == b && rtype(p->arg[a]) == RTmp) {
 				bsset(v, p->arg[a].val);
 				bsset(b->gen, p->arg[a].val);
 			}
+		}
+	}
 }
 
 static void

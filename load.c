@@ -50,6 +50,8 @@ loadsz(Ins *l)
 	case Oloadsh: case Oloaduh: return 2;
 	case Oloadsw: case Oloaduw: return 4;
 	case Oload: return KWIDE(l->cls) ? 8 : 4;
+	default:
+			die("unreachable");
 	}
 	die("unreachable");
 }
@@ -62,8 +64,9 @@ storesz(Ins *s)
 	case Ostoreh: return 2;
 	case Ostorew: case Ostores: return 4;
 	case Ostorel: case Ostored: return 8;
+	default:
+			die("unreachable");
 	}
-	die("unreachable");
 }
 
 static Ref

@@ -81,17 +81,17 @@ struct Ref {
 	uint val:29; // val is index into tmp/const/mem pool
 };
 
-enum {
+enum Rty {
 	RTmp,
 	RCon,
 	RInt,
 	RType, /* last kind to come out of the parser */
 	RSlot,
-	RCall,
+	RCall, // ref to call label
 	RMem,
 };
 
-#define R        (Ref){RTmp, 0}
+#define R        (Ref){RTmp, 0} // assigned register (hardware constraints etc.)
 #define UNDEF    (Ref){RCon, 0}  /* represents uninitialized data */
 #define CON_Z    (Ref){RCon, 1}
 #define TMP(x)   (Ref){RTmp, x}
@@ -232,7 +232,7 @@ struct Op {
 };
 
 struct Ins {
-	uint op:30;
+	enum O op:30;
 	uint cls:2;
 	Ref to;
 	Ref arg[2];
@@ -254,14 +254,14 @@ struct Blk {
 	Ins *ins;
 	uint nins;
 	struct {
-		short type;
+		enum J type;
 		Ref arg;
 	} jmp; // terminating jmp
 	Blk *s1; // primary successor
 	Blk *s2; // secondary successor (else branch)
 	Blk *link; // next block in program-order
 
-	uint id; // block id, incrementing in rpo order
+	uint id; // block id
 	uint visit; // general purpose, for graph traversals
 
 	Blk *idom;
@@ -273,6 +273,7 @@ struct Blk {
 	Blk **pred; // predecessors
 	uint npred;
 
+	BSet useordef[1]; // tmps used or defined in block
 	BSet in[1], out[1], gen[1]; // live-in, live-out, generated in block
 	int nlive[2]; // number of live tmps, by class [gpr, fpr]
 	int loop; // loop nesting depth
@@ -342,6 +343,7 @@ struct Tmp {
 	uint ndef, nuse; // no. of defs and no. of uses
 	uint bid; /* id of a defining block */
 	uint cost; // spill cost
+	uint nextused; // next use distance
 	int slot; /* spilled stack slot, -1 for unset */
 	short cls; // type
 	struct {
@@ -582,6 +584,7 @@ void loadopt(Fn *);
 /* ssa.c */
 void adduse(Tmp *, int, Blk *, ...);
 void filluse(Fn *);
+void filluseordef(Fn*, Blk*);
 void ssa(Fn *);
 void ssacheck(Fn *);
 

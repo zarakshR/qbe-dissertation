@@ -557,6 +557,8 @@ rv64_emitfn(Fn *fn, FILE *f)
 				id0+b->s2->id
 			);
 			goto Jmp;
+		default:
+			die("unreachable");
 		}
 	}
 	id0 += fn->nblk;

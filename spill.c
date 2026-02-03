@@ -82,6 +82,22 @@ fillcost(Fn* fn) {
             tmpuse(i->to, 0, b->loop, fn);
             tmpuse(i->arg[0], 1, b->loop, fn);
             tmpuse(i->arg[1], 1, b->loop, fn);
+
+            // add distance to next use
+            if (rtype(i->to) == RTmp && i->to.val >= Tmp0) {
+                Tmp* dst = &fn->tmp[i->to.val];
+                int dist = 1;
+                for (Ins* j = i + 1; j < &b->ins[b->nins]; j++, dist++) {
+                    if (req(i->to, j->arg[0]) || req(i->to, j->arg[1])) {
+                        dst->nextused = dist;
+                        break;
+                    }
+                }
+
+                // for (Use* u = dst->use; u < &dst->use[dst->nuse]; u++) {
+                //     fprintf(stderr, "in %d use: %d\n", b->id, u->bid);
+                // }
+            }
         }
         tmpuse(b->jmp.arg, 1, b->loop, fn);
     }
@@ -103,12 +119,17 @@ static int slot4; /* next slot of 4 bytes */
 static int slot8; /* ditto, 8 bytes */
 static BSet mask[2][1]; /* class masks */
 
+// comparator to sort tmps by spill cost
 static int
 tcmp0(const void* pa, const void* pb) {
     const Tmp ta = tmp[*(int*) pa];
     const Tmp tb = tmp[*(int*) pb];
 
-    return (ta.cost < tb.cost) ? 1 : (tb.cost < ta.cost) ? -1 : 0;
+    if (ta.cost == tb.cost) {
+        return ta.nextused < tb.nextused ? -1 : tb.nextused < ta.nextused ? 1 : 0;
+    }
+
+    return ta.cost < tb.cost ? 1 : -1;
 }
 
 static int
@@ -168,8 +189,7 @@ limit(BSet* b, int k, BSet* f) {
     int i, t, nt;
 
     nt = bscount(b);
-    if (nt <= k)
-        return;
+    if (nt <= k) { return; }
     if (nt > maxt) {
         free(tarr);
         tarr = emalloc(nt * sizeof tarr[0]);
@@ -322,7 +342,8 @@ spill(Fn* fn) {
     Blk* b,* s1,* s2,* hd,** bp;
     int j, l, t, k, lvarg[2];
     uint n;
-    BSet u[1], v[1], w[1];
+    BSet u[1], w[1];
+    BSet live = {0};
     Ins* i;
     Phi* p;
     Mem* m;
@@ -331,7 +352,7 @@ spill(Fn* fn) {
     tmp = fn->tmp;
     ntmp = fn->ntmp;
     bsinit(u, ntmp);
-    bsinit(v, ntmp);
+    bsinit(&live, ntmp);
     bsinit(w, ntmp);
     bsinit(mask[0], ntmp);
     bsinit(mask[1], ntmp);
@@ -358,15 +379,23 @@ spill(Fn* fn) {
         s1 = b->s1;
         s2 = b->s2;
         hd = 0;
-        if (s1 && s1->id <= b->id)
+
+        if (s1 && s1->id <= b->id) {
             hd = s1;
-        if (s2 && s2->id <= b->id)
-            if (!hd || s2->id >= hd->id)
+        }
+
+        if (s2 && s2->id <= b->id) {
+            // s2->id >= hd->id implies s2 is the tighter loop's header
+            if (!hd || s2->id >= hd->id) {
                 hd = s2;
+            }
+        }
+
+        // `v` contains tmps that must be in registers
         if (hd) {
             /* back-edge */
-            bszero(v);
-            hd->gen->t[0] |= T.rglob; /* don't spill registers */
+            bszero(&live);
+            *hd->gen->t |= T.rglob; /* don't spill registers */
             for (k = 0; k < 2; k++) {
                 n = k == 0 ? T.ngpr : T.nfpr;
                 bscopy(u, b->out); // u = b->out
@@ -375,147 +404,173 @@ spill(Fn* fn) {
                 bsinter(u, hd->gen); // u &= hd->gen
                 bsdiff(w, hd->gen); // w &= ~hd->gen
 
-                // w : out and not generated in block
+                // w : live out and not generated in loop header
                 if (bscount(u) < n) {
                     j = bscount(w); /* live through */
                     l = hd->nlive[k];
-                    // registers are reserved for tmps that are live-through
+                    // registers are reserved for tmps that are live in loop header, but not defined in any loop-predecessor of b
                     limit(w, n - (l - j), 0);
                     bsunion(u, w);
                 } else {
                     limit(u, n, 0);
                 }
 
-                bsunion(v, u);
+                bsunion(&live, u);
             }
         } else if (s1) {
             /* avoid reloading temporaries
              * in the middle of loops */
-            bszero(v);
+            bszero(&live);
+            // w : phi arguments in `s1` that are defined in `b`
             liveon(w, b, s1);
-            merge(v, b, w, s1);
+            merge(&live, b, w, s1);
             if (s2) {
                 liveon(u, b, s2);
-                merge(v, b, u, s2);
+                merge(&live, b, u, s2);
                 bsinter(w, u);
             }
-            limit2(v, 0, 0, w);
+            limit2(&live, 0, 0, w);
         } else {
-            bscopy(v, b->out);
-            if (rtype(b->jmp.arg) == RCall)
-                v->t[0] |= T.retregs(b->jmp.arg, 0);
+            // exit block
+            bscopy(&live, b->out);
+            if (rtype(b->jmp.arg) == RCall) {
+                // if block ends in a call: add return registers to v
+                *live.t |= T.retregs(b->jmp.arg, 0);
+            }
         }
-        for (t = Tmp0; bsiter(b->out, &t); t++)
-            if (!bshas(v, t))
+
+        // assign slots for unallocated registers
+        for (t = Tmp0; bsiter(b->out, &t); t++) {
+            if (!bshas(&live, t)) {
                 slot(t);
-        bscopy(b->out, v);
+            }
+        }
+
+        // out will contain tmps that must be in registers at block boundaries
+        bscopy(b->out, &live);
 
         /* 2. process the block instructions */
         if (rtype(b->jmp.arg) == RTmp) {
             t = b->jmp.arg.val;
-            assert(KBASE(tmp[t].cls) == 0);
-            lvarg[0] = bshas(v, t);
-            bsset(v, t);
-            bscopy(u, v);
-            limit2(v, 0, 0, NULL);
-            if (!bshas(v, t)) {
-                if (!lvarg[0])
+            assert(KBASE(tmp[t].cls) == KINT);
+            lvarg[0] = bshas(&live, t);
+            bsset(&live, t);
+            bscopy(u, &live);
+            limit2(&live, 0, 0, NULL);
+            if (!bshas(&live, t)) {
+                if (!lvarg[0]) {
                     bsclr(u, t);
+                }
                 b->jmp.arg = slot(t);
             }
-            reloads(u, v);
+            reloads(u, &live);
         }
         curi = &insb[NIns];
         for (i = &b->ins[b->nins]; i != b->ins;) {
             i--;
             if (isregcpy(i)) {
-                i = dopm(b, i, v);
+                i = dopm(b, i, &live);
                 continue;
             }
             bszero(w);
+
+            // if dst not pre-coloured
             if (!req(i->to, R)) {
                 assert(rtype(i->to) == RTmp);
                 t = i->to.val;
-                if (bshas(v, t))
-                    bsclr(v, t);
-                else {
+
+                if (bshas(&live, t)) {
+                    bsclr(&live, t);
+                } else {
                     /* make sure we have a reg
                      * for the result */
                     assert(t >= Tmp0 && "dead reg");
-                    bsset(v, t);
+                    bsset(&live, t);
                     bsset(w, t);
                 }
             }
+
             j = T.memargs(i->op);
-            for (n = 0; n < 2; n++)
-                if (rtype(i->arg[n]) == RMem)
-                    j--;
-            for (n = 0; n < 2; n++)
-                switch (rtype(i->arg[n])) {
+
+            if (rtype(i->arg[0]) == RMem) { j--; }
+            if (rtype(i->arg[1]) == RMem) { j--; }
+
+            for (n = 0; n < 2; n++) {
+                const Ref arg = i->arg[n];
+                switch (rtype(arg)) {
                     case RMem:
-                        t = i->arg[n].val;
-                        m = &fn->mem[t];
+                        m = &fn->mem[arg.val];
                         if (rtype(m->base) == RTmp) {
-                            bsset(v, m->base.val);
+                            bsset(&live, m->base.val);
                             bsset(w, m->base.val);
                         }
                         if (rtype(m->index) == RTmp) {
-                            bsset(v, m->index.val);
+                            bsset(&live, m->index.val);
                             bsset(w, m->index.val);
                         }
                         break;
                     case RTmp:
-                        t = i->arg[n].val;
-                        lvarg[n] = bshas(v, t);
-                        bsset(v, t);
+                        lvarg[n] = bshas(&live, arg.val);
+                        bsset(&live, arg.val);
                         if (j-- <= 0)
-                            bsset(w, t);
+                            bsset(w, arg.val);
                         break;
                 }
-            bscopy(u, v);
-            limit2(v, 0, 0, w);
-            for (n = 0; n < 2; n++)
+            }
+
+            bscopy(u, &live);
+            limit2(&live, 0, 0, w);
+
+            for (n = 0; n < 2; n++) {
                 if (rtype(i->arg[n]) == RTmp) {
                     t = i->arg[n].val;
-                    if (!bshas(v, t)) {
+                    if (!bshas(&live, t)) {
                         /* do not reload if the
                          * argument is dead
                          */
-                        if (!lvarg[n])
+                        if (!lvarg[n]) {
                             bsclr(u, t);
+                        }
                         i->arg[n] = slot(t);
                     }
                 }
-            reloads(u, v);
+            }
+            reloads(u, &live);
+
             if (!req(i->to, R)) {
                 t = i->to.val;
                 store(i->to, tmp[t].slot);
-                if (t >= Tmp0)
+                if (t >= Tmp0) {
                     /* in case i->to was a
                      * dead temporary */
-                    bsclr(v, t);
+                    bsclr(&live, t);
+                }
             }
+
             emiti(*i);
-            r = v->t[0]; /* Tmp0 is NBit */
-            if (r)
-                sethint(v, r);
+            r = *live.t; /* Tmp0 is NBit */
+            sethint(&live, r);
         }
-        if (b == fn->start)
-            assert(v->t[0] == (T.rglob | fn->reg));
-        else
-            assert(v->t[0] == T.rglob);
+
+        if (b == fn->start) {
+            assert(*live.t == (T.rglob | fn->reg));
+        } else {
+            assert(*live.t == T.rglob);
+        }
 
         for (p = b->phi; p; p = p->link) {
             assert(rtype(p->to) == RTmp);
             t = p->to.val;
-            if (bshas(v, t)) {
-                bsclr(v, t);
+            if (bshas(&live, t)) {
+                bsclr(&live, t);
                 store(p->to, tmp[t].slot);
-            } else if (bshas(b->in, t))
+            } else if (bshas(b->in, t)) {
                 /* only if the phi is live */
                 p->to = slot(p->to.val);
+            }
         }
-        bscopy(b->in, v);
+
+        bscopy(b->in, &live);
         idup(b, curi, &insb[NIns] - curi);
     }
 

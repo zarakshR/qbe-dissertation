@@ -1380,6 +1380,9 @@ printfn(Fn *fn, FILE *f)
 				case Oxdiv:
 				case Oxidiv:
 					fputc(ktoc[i->cls], f);
+					break;
+				default:
+					die("unreachable");
 				}
 			if (!req(i->arg[0], R)) {
 				fprintf(f, " ");

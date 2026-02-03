@@ -313,6 +313,8 @@ argsclass(Ins *i0, Ins *i1, Class *carg, int retptr)
 			*c->cls = Kl;
 			envc = 1;
 			break;
+		default:
+				die("unreachable");
 		}
 	}
 	return envc << 12 | (gp-gpreg) << 4 | (fp-fpreg) << 8;

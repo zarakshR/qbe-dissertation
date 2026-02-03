@@ -31,7 +31,29 @@ adduse(Tmp *tmp, int ty, Blk *b, ...)
 	va_end(ap);
 }
 
+void filluseordef(Fn* fn, Blk* blk) {
+	bsinit(blk->useordef, fn->ntmp);
+
+	// phis
+	for (const Phi* phi = blk->phi; phi; phi = phi->link) {
+		assert(rtype(phi->to) == RTmp);
+		bsset(blk->useordef, phi->to.val);
+		for (uint i = 0; i < phi->narg; i++) {
+			if (rtype(phi->arg[i]) == RTmp) { bsset(blk->useordef, phi->arg[i].val); }
+		}
+	}
+
+	for (const Ins* i = blk->ins; i<&blk->ins[blk->nins]; i++) {
+		if (rtype(i->to) == RTmp) { bsset(blk->useordef, i->to.val); }
+		if (rtype(i->arg[0]) == RTmp) { bsset(blk->useordef, i->arg[0].val); }
+		if (rtype(i->arg[1]) == RTmp) { bsset(blk->useordef, i->arg[1].val); }
+	}
+
+	if (rtype(blk->jmp.arg) == RTmp) { bsset(blk->useordef, blk->jmp.arg.val); }
+}
+
 /* fill usage, width, phi, and class information
+ * fill nextuse information
  * must not change .visit fields
  */
 void
@@ -57,6 +79,7 @@ filluse(Fn *fn)
 			tmp[t].use = vnew(0, sizeof(Use), PFn);
 	}
 	for (b=fn->start; b; b=b->link) {
+		// filluseordef(fn, b);
 		for (p=b->phi; p; p=p->link) {
 			assert(rtype(p->to) == RTmp);
 			tp = p->to.val;

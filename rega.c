@@ -539,10 +539,12 @@ rega(Fn* fn) {
     qsort(blk, fn->nblk, sizeof blk[0], carve);
 
     // {
-    // NOTE: DEBUG print phi info for each tmp
-    // for (int i = Tmp0; i < fn->ntmp; i++) {
-    // 	fprintf(stderr, "[%d] %s: %d\n", i, tmp[i].name, tmp[i].phi);
-    // }
+    //     Blk* b = fn->start->link;
+    //     fprintf(stderr, "%s\n", b->name);
+    //     for (int i = 0; bsiter(b->useordef, &i); i++) {
+    //         fprintf(stderr, "%s ", tmp[i].name);
+    //     }
+    //     fprintf(stderr, "\n");
     // }
 
     // process register hints (for loading from parameters into locals)

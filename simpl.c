@@ -99,7 +99,7 @@ ins(Ins **pi, int *new, Blk *b, Fn *fn)
 				}
 			}
 		}
-		break;
+	default: break;
 	}
 	if (*new)
 		emiti(*i);
