@@ -624,6 +624,9 @@ void simpl(Fn *);
 void liveon(BSet *, Blk *, Blk *);
 void filllive(Fn *);
 
+// nextuse.c
+void nextuse(const Fn*);
+
 /* spill.c */
 void fillcost(Fn *);
 void spill(Fn *);
