@@ -16,6 +16,7 @@ char debug['Z'+1] = {
 	['L'] = 0, /* liveness */
 	['S'] = 0, /* spilling */
 	['R'] = 0, /* reg. allocation */
+	['B'] = 0, // branch probabilities
 };
 
 extern Target T_amd64_sysv;

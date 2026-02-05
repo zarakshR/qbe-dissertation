@@ -127,6 +127,44 @@ void nextuse(const Fn* const fn) {
             changed = changed || donextuse(fn->ntmp, fn->rpo[i]);
         }
     } while (changed);
+
+    if (debug['B']) {
+        fprintf(stderr, "\n> Branch probability info:\n");
+
+        for (Blk* blk = fn->start; blk; blk = blk->link) {
+            fprintf(stderr, "%s:\n", blk->name);
+
+            for (int i = 0; bsiter(blk->uses, &i); i++) {
+                if (i < Tmp0) { continue; }
+
+                NextUse n = blk->nextuse[i];
+                fprintf(
+                    stderr,
+                    "USE (%d) %s TOP: (%f, %f), BOT: (%f, %f)\n",
+                    i,
+                    fn->tmp[i].name,
+                    n.lptop,
+                    n.edtop,
+                    n.lpbot,
+                    n.edbot
+                );
+            }
+
+            for (int i = 0; bsiter(blk->defs, &i); i++) {
+                if (i < Tmp0) { continue; }
+
+                NextUse n = blk->nextuse[i];
+                fprintf(
+                    stderr,
+                    "DEF (%d) %s TOP: (%f, %f), BOT: (%f, %f)\n",
+                    i,
+                    fn->tmp[i].name,
+                    n.lptop,
+                    n.edtop,
+                    n.lpbot,
+                    n.edbot
+                );
+            }
         }
     }
 }
