@@ -252,6 +252,7 @@ struct Phi {
 
 // next-use info
 struct NextUse {
+	long dist; // distance to first use in block, if not defined earlier
 	float lptop, lpbot; // live-probabilities
 	float edtop, edbot; // expected distances
 };
