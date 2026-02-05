@@ -18,6 +18,7 @@ typedef struct Ref Ref;
 typedef struct Op Op;
 typedef struct Ins Ins;
 typedef struct Phi Phi;
+typedef struct NextUse NextUse;
 typedef struct Blk Blk;
 typedef struct Use Use;
 typedef struct Sym Sym;
@@ -76,11 +77,6 @@ struct BSet {
 	bits *t;
 };
 
-struct Ref {
-	uint type:3; // RTmp, RCon, etc.
-	uint val:29; // val is index into tmp/const/mem pool
-};
-
 enum Rty {
 	RTmp,
 	RCon,
@@ -89,6 +85,11 @@ enum Rty {
 	RSlot,
 	RCall, // ref to call label
 	RMem,
+};
+
+struct Ref {
+	enum Rty type:3; // RTmp, RCon, etc.
+	uint val:29; // val is index into tmp/const/mem pool
 };
 
 #define R        (Ref){RTmp, 0} // assigned register (hardware constraints etc.)
@@ -249,8 +250,14 @@ struct Phi {
 	Phi *link;
 };
 
+// next-use info
+struct NextUse {
+	float lptop, lpbot; // live-probabilities
+	float edtop, edbot; // expected distances
+};
+
 struct Blk {
-	Phi *phi; // list of phi instructions; NULL if no phis
+	Phi *phi; // list of phi instructions
 	Ins *ins;
 	uint nins;
 	struct {
@@ -273,7 +280,11 @@ struct Blk {
 	Blk **pred; // predecessors
 	uint npred;
 
-	BSet useordef[1]; // tmps used or defined in block
+	// branch probabilities
+	float s1prob, s2prob; // branch probabilities
+	NextUse* nextuse;
+
+	BSet uses[1], defs[1];
 	BSet in[1], out[1], gen[1]; // live-in, live-out, generated in block
 	int nlive[2]; // number of live tmps, by class [gpr, fpr]
 	int loop; // loop nesting depth
@@ -584,7 +595,7 @@ void loadopt(Fn *);
 /* ssa.c */
 void adduse(Tmp *, int, Blk *, ...);
 void filluse(Fn *);
-void filluseordef(Fn*, Blk*);
+void fillnextuse(Blk*);
 void ssa(Fn *);
 void ssacheck(Fn *);
 

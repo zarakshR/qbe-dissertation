@@ -538,14 +538,14 @@ rega(Fn* fn) {
     // sort blocks by loop nesting-depth; most nested loop first
     qsort(blk, fn->nblk, sizeof blk[0], carve);
 
-    // {
-    //     Blk* b = fn->start->link;
-    //     fprintf(stderr, "%s\n", b->name);
-    //     for (int i = 0; bsiter(b->useordef, &i); i++) {
-    //         fprintf(stderr, "%s ", tmp[i].name);
-    //     }
-    //     fprintf(stderr, "\n");
-    // }
+    // fprintf(stderr, "tmps: %d\n", fn->ntmp);
+    {
+        // Blk* b;
+        // for (b = fn->start; b; b = b->link) {
+        //     fprintf(stderr, "%s (%p, %p)", b->name, b->s1, b->s2);
+        //     fprintf(stderr, "\n");
+        // }
+    }
 
     // process register hints (for loading from parameters into locals)
     // register hints are listed first in the function body (i.e., in fn->start) as copy instructions

@@ -154,6 +154,11 @@ vgrow(void *vp, ulong len)
 	*(Vec **)vp = v1;
 }
 
+void* vadd(void* vp) {
+	Vec* v = *((Vec**) vp - 1);
+	assert(v + 1 && v->mag == VMag);
+}
+
 void
 addins(Ins **pvins, uint *pnins, Ins *i)
 {
