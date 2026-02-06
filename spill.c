@@ -89,7 +89,6 @@ fillcost(Fn* fn) {
                 int dist = 1;
                 for (Ins* j = i + 1; j < &b->ins[b->nins]; j++, dist++) {
                     if (req(i->to, j->arg[0]) || req(i->to, j->arg[1])) {
-                        dst->nextused = dist;
                         break;
                     }
                 }
@@ -124,10 +123,6 @@ static int
 tcmp0(const void* pa, const void* pb) {
     const Tmp ta = tmp[*(int*) pa];
     const Tmp tb = tmp[*(int*) pb];
-
-    if (ta.cost == tb.cost) {
-        return ta.nextused < tb.nextused ? -1 : tb.nextused < ta.nextused ? 1 : 0;
-    }
 
     return ta.cost < tb.cost ? 1 : -1;
 }

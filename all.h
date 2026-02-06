@@ -359,7 +359,6 @@ struct Tmp {
 	uint ndef, nuse; // no. of defs and no. of uses
 	uint bid; /* id of a defining block */
 	uint cost; // spill cost
-	uint nextused; // next use distance
 	int slot; /* spilled stack slot, -1 for unset */
 	short cls; // type
 	struct {
