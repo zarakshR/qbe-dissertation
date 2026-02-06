@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #define MAKESURE(what, x) typedef char make_sure_##what[(x)?1:-1]
 #define die(...) die_(__FILE__, __VA_ARGS__)
@@ -252,10 +253,13 @@ struct Phi {
 
 // next-use info
 struct NextUse {
-	long dist; // distance to first use in block, if not defined earlier
+	enum { XXX, NUDef, NUUse } first; // first occurrence; XXX for unknown
+	long fudist; // distance to first use; implies first == NUUse
 	float lptop, lpbot; // live-probabilities
 	float edtop, edbot; // expected distances
 };
+
+_Static_assert(XXX == 0, "XXX must be 0 for default initialization");
 
 struct Blk {
 	Phi *phi; // list of phi instructions
@@ -611,7 +615,6 @@ void loadopt(Fn *);
 /* ssa.c */
 void adduse(Tmp *, int, Blk *, ...);
 void filluse(Fn *);
-void fillnextuse(Blk*);
 void ssa(Fn *);
 void ssacheck(Fn *);
 

@@ -1,110 +1,210 @@
+#include <math.h>
+
 #include "all.h"
 
-#include <math.h>
-#include <signal.h>
+__always_inline static int uses(const Ins* const ins, const int t) {
+    const int u0 = (ins->arg[0].type == RTmp) && (ins->arg[0].val == t);
+    const int u1 = (ins->arg[1].type == RTmp) && (ins->arg[1].val == t);
 
-// TODO: a phi shouldn't count as a 0 distance use, use phi representatives
-void initnextuse(Blk* const blk) {
+    return u0 || u1;
+}
+
+__always_inline static int defines(const Ins* const ins, const int t) {
+    return (ins->to.type == RTmp) && (ins->to.val == t);
+}
+
+static void fillusedefs(Blk* const blk) {
     for (const Phi* phi = blk->phi; phi; phi = phi->link) {
-        assert(rtype(phi->to) == RTmp);
-
-        // phi args
         for (uint i = 0; i < phi->narg; i++) {
-            if (rtype(phi->arg[i]) == RTmp) {
-                bsset(blk->uses, phi->arg[i].val);
-                blk->nextuse[phi->arg[i].val].lptop = 1;
-                blk->nextuse[phi->arg[i].val].dist = 0;
-                blk->nextuse[phi->arg[i].val].edtop = 0;
-            }
+            const Ref arg = phi->arg[i];
+            if (arg.type == RTmp) { bsset(blk->uses, arg.val); }
         }
 
-        // phi def: a phi-defined tmp can have itself as an argument
-        if (!bshas(blk->uses, phi->to.val)) {
-            bsset(blk->defs, phi->to.val);
-            blk->nextuse[phi->to.val].lptop = 0;
-            blk->nextuse[phi->to.val].edtop = -1;
-            blk->nextuse[phi->to.val].dist = -1;
-        }
+        const Ref to = phi->to;
+        assert(to.type == RTmp);
+        bsset(blk->defs, to.val);
     }
 
     for (const Ins* ins = blk->ins; ins < &blk->ins[blk->nins]; ins++) {
-        // can only ever be one def
-        if (rtype(ins->to) == RTmp && !bshas(blk->uses, ins->to.val)) {
-            bsset(blk->defs, ins->to.val);
-            blk->nextuse[ins->to.val].lptop = 0;
-            blk->nextuse[ins->to.val].edtop = -1;
-            blk->nextuse[ins->to.val].dist = -1;
+        for (int i = 0; i < 2; i++) {
+            const Ref arg = ins->arg[i];
+            if (arg.type == RTmp) { bsset(blk->uses, arg.val); }
         }
 
-        // mark args as uses
-        for (int a = 0; a < 2; a++) {
-            const Ref arg = ins->arg[a];
-
-            if (rtype(arg) != RTmp) { continue; }
-            if (bshas(blk->uses, arg.val) || bshas(blk->defs, arg.val)) { continue; }
-
-            bsset(blk->uses, arg.val);
-            blk->nextuse[arg.val].lptop = 1;
-            blk->nextuse[arg.val].edtop = ins - blk->ins;
-            blk->nextuse[arg.val].dist = ins - blk->ins;
-        }
-    }
-
-    for (int t = 0; bsiter(blk->out, &t); t++) {
-        if (bshas(blk->uses, t) || bshas(blk->defs, t)) { continue; }
-        blk->nextuse[t].lpbot = 1;
-        blk->nextuse[t].edtop = blk->nins;
-    }
-
-    for (int t = 0; bsiter(blk->in, &t); t++) {
-        if (bshas(blk->uses, t) || bshas(blk->defs, t)) { continue; }
-        blk->nextuse[t].lptop = 1;
-        blk->nextuse[t].edtop = blk->nins;
-    }
-
-    if (blk->s1 && blk->s2) {
-        blk->s1prob = 0.5f;
-        blk->s2prob = 0.5f;
-    } else if (blk->s1) {
-        blk->s1prob = 1;
+        const Ref to = ins->to;
+        assert(to.type == RTmp);
+        bsset(blk->defs, to.val);
     }
 }
 
-int donextuse(const int ntmp, Blk* const blk) {
+static float lptop(Blk* const blk, const int t) {
+    if (!bshas(blk->uses, t) && !bshas(blk->defs, t)) { return blk->nextuse[t].lpbot; }
+
+    switch (blk->nextuse[t].first) {
+        case XXX:
+            // do all phi args first
+            for (const Phi* phi = blk->phi; phi; phi = phi->link) {
+                int uses = 0;
+
+                for (int i = 0; i < phi->narg; i++) {
+                    const Ref arg = phi->arg[i];
+                    uses = uses || (arg.type == RTmp && arg.val == t);
+                }
+
+                if (uses) {
+                    blk->nextuse[t].first = NUUse;
+                    blk->nextuse[t].fudist = 0;
+                    return 1;
+                }
+            }
+
+            for (const Phi* phi = blk->phi; phi; phi = phi->link) {
+                if (phi->to.val == t) {
+                    blk->nextuse[t].first = NUDef;
+                    return 0;
+                }
+            }
+
+            // search in body
+            for (const Ins* ins = blk->ins; ins < &blk->ins[blk->nins]; ins++) {
+                if (uses(ins, t)) {
+                    blk->nextuse[t].first = NUUse;
+                    blk->nextuse[t].fudist = ins - blk->ins;
+                    return 1;
+                }
+
+                if (defines(ins, t)) {
+                    blk->nextuse[t].first = NUDef;
+                    return 0;
+                }
+            }
+
+            // no use or def found, but t in uses or defs
+            die("unreachable");
+        case NUDef:
+            return 0;
+        case NUUse:
+            return 1;
+    }
+}
+
+static float lpbot(Blk* const blk, const int t) {
+    float lpbot = 0;
+
+    if (blk->s1) {
+        lpbot += blk->s1prob * blk->s1->nextuse[t].lptop;
+    }
+
+    if (blk->s2) {
+        lpbot += blk->s2prob * blk->s2->nextuse[t].lptop;
+    }
+
+    return lpbot;
+}
+
+static float edtop(Blk* const blk, const int t) {
+    if (blk->nextuse[t].lptop == 0) { return -1; }
+    if (!bshas(blk->uses, t) && !bshas(blk->defs, t)) {
+        return (blk->nextuse[t].edbot < 0) ? -1 : blk->nextuse[t].edbot + blk->nins;
+    }
+
+    switch (blk->nextuse[t].first) {
+        case XXX:
+            die("no liveprob info!");
+        case NUDef:
+            return -1;
+        case NUUse:
+            return blk->nextuse[t].fudist;
+    }
+}
+
+static float edbot(Blk* const blk, const int t) {
+    const float lpbot = blk->nextuse[t].lpbot;
+    float edbot = 0;
+
+    if (blk->s1) {
+        const NextUse s1nu = blk->s1->nextuse[t];
+        edbot += blk->s1prob * s1nu.edtop * s1nu.lptop;
+    }
+
+    if (blk->s2) {
+        const NextUse s2nu = blk->s2->nextuse[t];
+        edbot += blk->s2prob * s2nu.edtop * s2nu.lptop;
+    }
+
+    edbot = (lpbot == 0) ? -1 : edbot / lpbot;
+
+    return edbot;
+}
+
+static int liveprobblk(Blk* const blk, const int ntmp) {
     int changed = 0;
 
-    for (int i = Tmp0; i < ntmp; i++) {
-        const NextUse old = blk->nextuse[i];
-        NextUse* new = &blk->nextuse[i];
+    int count = 0; // TODO: remove
+    for (int t = Tmp0; t < ntmp; t++) {
+        const NextUse old = blk->nextuse[t];
+        NextUse* const new = &blk->nextuse[t];
 
-        float lpbot = 0;
-        if (blk->s1) {
-            lpbot += blk->s1prob * blk->s1->nextuse[i].lptop;
-        }
-        if (blk->s2) {
-            lpbot += blk->s2prob * blk->s2->nextuse[i].lptop;
-        }
+        new->lpbot = lpbot(blk, t);
+        new->lptop = lptop(blk, t);
 
-        float edbot = 0;
-        if (blk->s1) {
-            edbot += blk->s1prob * blk->s1->nextuse[i].edtop * blk->s1->nextuse[i].lptop;
-        }
-        if (blk->s2) {
-            edbot += blk->s2prob * blk->s2->nextuse[i].edtop * blk->s2->nextuse[i].lptop;
-        }
-        // if t not live at bottom of block, then expected distance is infinite
-        edbot = (lpbot == 0) ? -1 : edbot / (lpbot * lpbot);
-
-        new->edbot = edbot;
-        new->edtop = (new->lptop == 0.0) ? -1 : (old.dist != -1 && bshas(blk->uses, i)) ? old.dist : edbot + blk->nins;
-        new->lpbot = lpbot;
-        new->lptop = bshas(blk->defs, i) ? 0 : bshas(blk->uses, i) ? 1 : lpbot;
-
-        changed = changed || new->edtop != old.edtop || new->edbot != old.edbot || new->lptop != old.lptop || new->lpbot != old.
-                  lpbot;
+        if (fabsf(new->lptop - old.lptop) > 0.001f || fabsf(new->lpbot - old.lpbot) > 0.001f) { changed = 1; }
+        count++;
     }
 
     return changed;
+}
+
+static int estdistblk(Blk* const blk, const int ntmp) {
+    int changed = 0;
+
+    int count = 0; // TODO: remove
+    for (int t = Tmp0; t < ntmp; t++) {
+        const NextUse old = blk->nextuse[t];
+        NextUse* const new = &blk->nextuse[t];
+
+        new->edbot = edbot(blk, t);
+        new->edtop = edtop(blk, t);
+
+        if (fabsf(new->edtop - old.edtop) > 0.001f || fabsf(new->edbot - old.edbot) > 0.001f) { changed = 1; }
+        count++;
+    }
+
+    return changed;
+}
+
+// data-flow for live probability
+static void doliveprob(const Fn* const fn) {
+    int count = 0; // TODO: remove
+    IList wl = ilnew(PFn);
+
+    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
+    while (wl.n > 0) {
+        Blk* blk = fn->rpo[ilpop(&wl)];
+        if (liveprobblk(blk, fn->ntmp)) {
+            count++;
+            for (uint i = 0; i < blk->npred; i++) {
+                ilpush(&wl, blk->pred[i]->id);
+            }
+        }
+    }
+}
+
+// data-flow for estimated distances
+static void doestdist(const Fn* const fn) {
+    int count = 0;
+    IList wl = ilnew(PFn);
+
+    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
+    while (wl.n > 0) {
+        Blk* blk = fn->rpo[ilpop(&wl)];
+        if (estdistblk(blk, fn->ntmp)) {
+            count++;
+            for (uint i = 0; i < blk->npred; i++) {
+                ilpush(&wl, blk->pred[i]->id);
+            }
+        }
+    }
 }
 
 void nextuse(const Fn* const fn) {
@@ -113,57 +213,29 @@ void nextuse(const Fn* const fn) {
         bsinit(blk->defs, fn->ntmp);
         blk->nextuse = emalloc(sizeof blk->nextuse[0] * fn->ntmp);
 
-        for (int i = 0; i < fn->ntmp; i++) {
-            blk->nextuse[i].edtop = -1;
+        // TODO: get branch probabilities from profiling info
+        if (blk->s1 && blk->s2) {
+            blk->s1prob = 0.5;
+            blk->s2prob = 0.5;
+        } else if (blk->s1) {
+            blk->s1prob = 1;
         }
 
-        initnextuse(blk);
+        fillusedefs(blk);
     }
 
-    int changed;
-    do {
-        changed = 0;
-        for (int i = 0; i < fn->nblk; i++) {
-            changed = changed || donextuse(fn->ntmp, fn->rpo[i]);
-        }
-    } while (changed);
+    doliveprob(fn);
+    doestdist(fn);
 
     if (debug['B']) {
-        fprintf(stderr, "\n> Branch probability info:\n");
+        fprintf(stderr, "\n> Branch probability info:");
 
-        for (Blk* blk = fn->start; blk; blk = blk->link) {
-            fprintf(stderr, "%s:\n", blk->name);
+        for (const Blk* blk = fn->start; blk; blk = blk->link) {
+            fprintf(stderr, "\n>>%s: <TNAME>: (LPTOP, EDTOP) (LPBOT, EDBOT)\n", blk->name);
 
-            for (int i = 0; bsiter(blk->uses, &i); i++) {
-                if (i < Tmp0) { continue; }
-
-                NextUse n = blk->nextuse[i];
-                fprintf(
-                    stderr,
-                    "USE (%d) %s TOP: (%f, %f), BOT: (%f, %f)\n",
-                    i,
-                    fn->tmp[i].name,
-                    n.lptop,
-                    n.edtop,
-                    n.lpbot,
-                    n.edbot
-                );
-            }
-
-            for (int i = 0; bsiter(blk->defs, &i); i++) {
-                if (i < Tmp0) { continue; }
-
-                NextUse n = blk->nextuse[i];
-                fprintf(
-                    stderr,
-                    "DEF (%d) %s TOP: (%f, %f), BOT: (%f, %f)\n",
-                    i,
-                    fn->tmp[i].name,
-                    n.lptop,
-                    n.edtop,
-                    n.lpbot,
-                    n.edbot
-                );
+            for (int t = Tmp0; t < fn->ntmp; t++) {
+                const NextUse nu = blk->nextuse[t];
+                fprintf(stderr, "%10s: (%f, %f) (%f, %f)\n", fn->tmp[t].name, nu.lptop, nu.edtop, nu.lpbot, nu.edbot);
             }
         }
     }
