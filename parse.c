@@ -1382,7 +1382,7 @@ printfn(Fn *fn, FILE *f)
 					fputc(ktoc[i->cls], f);
 					break;
 				default:
-					die("unreachable");
+					break;
 				}
 			if (!req(i->arg[0], R)) {
 				fprintf(f, " ");
