@@ -2,15 +2,18 @@
 
 #include "all.h"
 
-__always_inline static int uses(const Ins* const ins, const int t) {
-    const int u0 = (ins->arg[0].type == RTmp) && (ins->arg[0].val == t);
-    const int u1 = (ins->arg[1].type == RTmp) && (ins->arg[1].val == t);
+static const Fn* fn;
 
-    return u0 || u1;
-}
+static int uses(const Ref r, int t) { // NOLINT(*-no-recursion)
+    if (r.type == RTmp) {
+        return r.val == t;
+    }
 
-__always_inline static int defines(const Ins* const ins, const int t) {
-    return (ins->to.type == RTmp) && (ins->to.val == t);
+    if (r.type == RMem) {
+        return uses(fn->mem[r.val].base, t) || uses(fn->mem[r.val].index, t);
+    }
+
+    return 0;
 }
 
 static void fillusedefs(Blk* const blk) {
@@ -37,6 +40,7 @@ static void fillusedefs(Blk* const blk) {
     }
 }
 
+// ReSharper disable once CppNotAllPathsReturnValue
 static float lptop(Blk* const blk, const int t) {
     if (!bshas(blk->uses, t) && !bshas(blk->defs, t)) { return blk->nextuse[t].lpbot; }
 
@@ -67,13 +71,13 @@ static float lptop(Blk* const blk, const int t) {
 
             // search in body
             for (const Ins* ins = blk->ins; ins < &blk->ins[blk->nins]; ins++) {
-                if (uses(ins, t)) {
+                if (uses(ins->arg[0], t) || uses(ins->arg[1], t)) {
                     blk->nextuse[t].first = NUUse;
                     blk->nextuse[t].fudist = ins - blk->ins;
                     return 1;
                 }
 
-                if (defines(ins, t)) {
+                if (ins->to.val == t) {
                     blk->nextuse[t].first = NUDef;
                     return 0;
                 }
@@ -102,6 +106,7 @@ static float lpbot(Blk* const blk, const int t) {
     return lpbot;
 }
 
+// ReSharper disable once CppNotAllPathsReturnValue
 static float edtop(Blk* const blk, const int t) {
     if (blk->nextuse[t].lptop == 0) { return -1; }
     if (!bshas(blk->uses, t) && !bshas(blk->defs, t)) {
@@ -174,15 +179,13 @@ static int estdistblk(Blk* const blk, const int ntmp) {
 }
 
 // data-flow for live probability
-static void doliveprob(const Fn* const fn) {
-    int count = 0; // TODO: remove
+static void doliveprob() {
     IList wl = ilnew(PFn);
 
     ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
     while (wl.n > 0) {
         Blk* blk = fn->rpo[ilpop(&wl)];
         if (liveprobblk(blk, fn->ntmp)) {
-            count++;
             for (uint i = 0; i < blk->npred; i++) {
                 ilpush(&wl, blk->pred[i]->id);
             }
@@ -191,15 +194,13 @@ static void doliveprob(const Fn* const fn) {
 }
 
 // data-flow for estimated distances
-static void doestdist(const Fn* const fn) {
-    int count = 0;
+static void doestdist() {
     IList wl = ilnew(PFn);
 
     ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
     while (wl.n > 0) {
         Blk* blk = fn->rpo[ilpop(&wl)];
         if (estdistblk(blk, fn->ntmp)) {
-            count++;
             for (uint i = 0; i < blk->npred; i++) {
                 ilpush(&wl, blk->pred[i]->id);
             }
@@ -207,7 +208,9 @@ static void doestdist(const Fn* const fn) {
     }
 }
 
-void nextuse(const Fn* const fn) {
+void nextuse(const Fn* const fn_) {
+    fn = fn_;
+
     for (Blk* blk = fn->start; blk; blk = blk->link) {
         bsinit(blk->uses, fn->ntmp);
         bsinit(blk->defs, fn->ntmp);
@@ -215,8 +218,8 @@ void nextuse(const Fn* const fn) {
 
         // TODO: get branch probabilities from profiling info
         if (blk->s1 && blk->s2) {
-            blk->s1prob = 0.5;
-            blk->s2prob = 0.5;
+            blk->s1prob = 0.5f;
+            blk->s2prob = 0.5f;
         } else if (blk->s1) {
             blk->s1prob = 1;
         }
@@ -224,8 +227,8 @@ void nextuse(const Fn* const fn) {
         fillusedefs(blk);
     }
 
-    doliveprob(fn);
-    doestdist(fn);
+    doliveprob();
+    doestdist();
 
     if (debug['B']) {
         fprintf(stderr, "\n> Branch probability info:");

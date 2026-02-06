@@ -90,8 +90,8 @@ func(Fn *fn)
 	fillcfg(fn);
 	filllive(fn);
 	fillloop(fn);
-	fillcost(fn);
 	nextuse(fn);
+	fillcost(fn);
 	spill(fn);
 	rega(fn);
 	fillcfg(fn);
