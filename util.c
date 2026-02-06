@@ -107,6 +107,45 @@ freeall()
 	nptr = 1;
 }
 
+IList ilnew(const Pool pool) {
+	return (IList) {
+		.n = 0,
+		.pool = pool,
+		.head = NULL
+	};
+}
+
+void ilpush(IList* const il, const uint i) {
+	void *(*make)(size_t) = (il->pool == PHeap) ? emalloc : alloc;
+
+	struct ILNode* const head = make(sizeof *il->head);
+	head->i = i;
+	head->next = il->head;
+
+	il->n++;
+	il->head = head;
+}
+
+uint ilpop(IList* const il) {
+	struct ILNode* head = il->head;
+	const int i = head->i;
+
+	il->n--;
+	il->head = head->next;
+
+	if (il->pool == PHeap) {
+		free(head);
+	}
+
+	return i;
+}
+
+void ilfree(IList* const il) {
+	while (il->n > 0) {
+		ilpop(il);
+	}
+}
+
 void *
 vnew(ulong len, size_t esz, Pool pool)
 {

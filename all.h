@@ -492,6 +492,17 @@ typedef enum {
 	PFn, /* discarded after processing the function */
 } Pool;
 
+typedef struct IList IList;
+
+struct IList {
+	size_t n;
+	Pool pool;
+	struct ILNode {
+		uint i;
+		struct ILNode* next;
+	} * head;
+};
+
 extern Typ *typ;
 extern Ins insb[NIns], *curi;
 uint32_t hash(char *);
@@ -499,6 +510,10 @@ void die_(char *, char *, ...) __attribute__((noreturn));
 void *emalloc(size_t);
 void *alloc(size_t);
 void freeall(void);
+IList ilnew(Pool);
+void ilpush(IList*, uint);
+uint ilpop(IList*);
+void ilfree(IList*);
 void *vnew(ulong, size_t, Pool);
 void vfree(void *);
 void vgrow(void *, ulong);
