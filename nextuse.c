@@ -237,14 +237,16 @@ void nextuse(const Fn* const fn_) {
     doestdist();
 
     if (debug['B']) {
-        fprintf(stderr, "\n> Branch probability info:");
+        fprintf(stderr, "\n> Branch probability info:\n");
 
         for (const Blk* blk = fn->start; blk; blk = blk->link) {
-            fprintf(stderr, "\n>>%s: <TNAME>: (LPTOP, EDTOP) (LPBOT, EDBOT)\n", blk->name);
+            fprintf(stderr, ">>%s:\n", blk->name);
 
             for (int t = Tmp0; t < fn->ntmp; t++) {
                 const NextUse nu = blk->nextuse[t];
-                fprintf(stderr, "%10s: (%f, %f) (%f, %f)\n", fn->tmp[t].name, nu.lptop, nu.edtop, nu.lpbot, nu.edbot);
+                if (nu.lptop != 0.0f || nu.lpbot != 0.0f) {
+                    fprintf(stderr, "%10s: (%f, %f) (%f, %f)\n", fn->tmp[t].name, nu.lptop, nu.edtop, nu.lpbot, nu.edbot);
+                }
             }
         }
     }
