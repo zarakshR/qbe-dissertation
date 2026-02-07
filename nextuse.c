@@ -38,6 +38,11 @@ static void fillusedefs(Blk* const blk) {
         assert(to.type == RTmp);
         bsset(blk->defs, to.val);
     }
+
+    // aggregate uses, defs, out, into one bset; these are the only tmps involved in each dataflow pass
+    bsunion(blk->u, blk->uses);
+    bsunion(blk->u, blk->defs);
+    bsunion(blk->u, blk->out);
 }
 
 // ReSharper disable once CppNotAllPathsReturnValue
@@ -144,9 +149,9 @@ static float edbot(Blk* const blk, const int t) {
 
 static int liveprobblk(Blk* const blk, const int ntmp) {
     int changed = 0;
-
     int count = 0; // TODO: remove
-    for (int t = Tmp0; t < ntmp; t++) {
+
+    for (int t = 0; bsiter(blk->u, &t); t++) {
         const NextUse old = blk->nextuse[t];
         NextUse* const new = &blk->nextuse[t];
 
@@ -162,9 +167,9 @@ static int liveprobblk(Blk* const blk, const int ntmp) {
 
 static int estdistblk(Blk* const blk, const int ntmp) {
     int changed = 0;
-
     int count = 0; // TODO: remove
-    for (int t = Tmp0; t < ntmp; t++) {
+
+    for (int t = 0; bsiter(blk->u, &t); t++) {
         const NextUse old = blk->nextuse[t];
         NextUse* const new = &blk->nextuse[t];
 
@@ -214,6 +219,7 @@ void nextuse(const Fn* const fn_) {
     for (Blk* blk = fn->start; blk; blk = blk->link) {
         bsinit(blk->uses, fn->ntmp);
         bsinit(blk->defs, fn->ntmp);
+        bsinit(blk->u, fn->ntmp);
         blk->nextuse = emalloc(sizeof blk->nextuse[0] * fn->ntmp);
 
         // TODO: get branch probabilities from profiling info

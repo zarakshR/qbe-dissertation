@@ -286,7 +286,8 @@ struct Blk {
 	uint npred;
 
 	// branch probabilities
-	float s1prob, s2prob; // branch probabilities
+	float s1prob, s2prob;
+	BSet u[1];  // misc. use
 	NextUse* nextuse;
 
 	BSet uses[1], defs[1];
