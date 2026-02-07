@@ -182,17 +182,29 @@ main(int ac, char *av[])
 
 	do {
 		f = av[optind];
+		FILE* prof = NULL;
 		if (!f || strcmp(f, "-") == 0) {
 			inf = stdin;
 			f = "-";
 		} else {
+			const size_t flen = strlen(f);
+			// ".prof" is 5 characters
+			char* profpath = alloc(flen + 5 + 1);
+			strcpy(profpath, f);
+			strcat(profpath, ".prof");
+			profpath[flen + 5] = '\0';
 			inf = fopen(f, "r");
+			// if .ssa.prof exists next to f, then it is profiling info
+			prof = fopen(profpath, "r");
+			if (prof) {
+				fprintf(stderr, "profile info found: %s\n", profpath);
+			}
 			if (!inf) {
 				fprintf(stderr, "cannot open '%s'\n", f);
 				exit(1);
 			}
 		}
-		parse(inf, f, dbgfile, data, func);
+		parse(inf, prof, f, dbgfile, data, func);
 		fclose(inf);
 	} while (++optind < ac);
 

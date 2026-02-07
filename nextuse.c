@@ -192,14 +192,6 @@ void nextuse(const Fn* const fn_) {
         bsinit(blk->u, fn->ntmp);
         blk->nextuse = emalloc(sizeof blk->nextuse[0] * fn->ntmp);
 
-        // TODO: get branch probabilities from profiling info
-        if (blk->s1 && blk->s2) {
-            blk->s1prob = 0.5f;
-            blk->s2prob = 0.5f;
-        } else if (blk->s1) {
-            blk->s1prob = 1;
-        }
-
         fillusedefs(blk);
     }
 
