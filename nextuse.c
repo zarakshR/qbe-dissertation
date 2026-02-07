@@ -78,7 +78,7 @@ static float lptop(Blk* const blk, const int t) {
             for (const Ins* ins = blk->ins; ins < &blk->ins[blk->nins]; ins++) {
                 if (uses(ins->arg[0], t) || uses(ins->arg[1], t)) {
                     blk->nextuse[t].first = NUUse;
-                    blk->nextuse[t].fudist = ins - blk->ins;
+                    blk->nextuse[t].fudist = ins - blk->ins + 1;
                     return 1;
                 }
 
