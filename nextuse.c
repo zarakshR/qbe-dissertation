@@ -183,36 +183,6 @@ static int estdistblk(Blk* const blk, const int ntmp) {
     return changed;
 }
 
-// data-flow for live probability
-static void doliveprob() {
-    IList wl = ilnew(PFn);
-
-    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
-    while (wl.head) {
-        Blk* blk = fn->rpo[ilpop(&wl)];
-        if (liveprobblk(blk, fn->ntmp)) {
-            for (uint i = 0; i < blk->npred; i++) {
-                ilpush(&wl, blk->pred[i]->id);
-            }
-        }
-    }
-}
-
-// data-flow for estimated distances
-static void doestdist() {
-    IList wl = ilnew(PFn);
-
-    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
-    while (wl.head) {
-        Blk* blk = fn->rpo[ilpop(&wl)];
-        if (estdistblk(blk, fn->ntmp)) {
-            for (uint i = 0; i < blk->npred; i++) {
-                ilpush(&wl, blk->pred[i]->id);
-            }
-        }
-    }
-}
-
 void nextuse(const Fn* const fn_) {
     fn = fn_;
 
@@ -233,8 +203,29 @@ void nextuse(const Fn* const fn_) {
         fillusedefs(blk);
     }
 
-    doliveprob();
-    doestdist();
+    IList wl = ilnew(PFn); // worklist
+
+    // liveness probability data-flow
+    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
+    while (wl.head) {
+        Blk* blk = fn->rpo[ilpop(&wl)];
+        if (liveprobblk(blk, fn->ntmp)) {
+            for (uint i = 0; i < blk->npred; i++) {
+                ilpush(&wl, blk->pred[i]->id);
+            }
+        }
+    }
+
+    // estimated distance data-flow
+    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
+    while (wl.head) {
+        Blk* blk = fn->rpo[ilpop(&wl)];
+        if (estdistblk(blk, fn->ntmp)) {
+            for (uint i = 0; i < blk->npred; i++) {
+                ilpush(&wl, blk->pred[i]->id);
+            }
+        }
+    }
 
     if (debug['B']) {
         fprintf(stderr, "\n> Branch probability info:\n");
