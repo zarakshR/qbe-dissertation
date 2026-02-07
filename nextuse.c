@@ -158,7 +158,7 @@ static int liveprobblk(Blk* const blk, const int ntmp) {
         new->lpbot = lpbot(blk, t);
         new->lptop = lptop(blk, t);
 
-        if (fabsf(new->lptop - old.lptop) > 0.001f || fabsf(new->lpbot - old.lpbot) > 0.001f) { changed = 1; }
+        if (fabsf(new->lptop - old.lptop) > 0.0001f || fabsf(new->lpbot - old.lpbot) > 0.0001f) { changed = 1; }
         count++;
     }
 
@@ -176,7 +176,7 @@ static int estdistblk(Blk* const blk, const int ntmp) {
         new->edbot = edbot(blk, t);
         new->edtop = edtop(blk, t);
 
-        if (fabsf(new->edtop - old.edtop) > 0.001f || fabsf(new->edbot - old.edbot) > 0.001f) { changed = 1; }
+        if (new->edtop != old.edtop || new->edbot != old.edbot) { changed = 1; }
         count++;
     }
 
