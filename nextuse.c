@@ -188,7 +188,7 @@ static void doliveprob() {
     IList wl = ilnew(PFn);
 
     ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
-    while (wl.n > 0) {
+    while (wl.head) {
         Blk* blk = fn->rpo[ilpop(&wl)];
         if (liveprobblk(blk, fn->ntmp)) {
             for (uint i = 0; i < blk->npred; i++) {
@@ -203,7 +203,7 @@ static void doestdist() {
     IList wl = ilnew(PFn);
 
     ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
-    while (wl.n > 0) {
+    while (wl.head) {
         Blk* blk = fn->rpo[ilpop(&wl)];
         if (estdistblk(blk, fn->ntmp)) {
             for (uint i = 0; i < blk->npred; i++) {

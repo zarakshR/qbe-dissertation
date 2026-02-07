@@ -109,7 +109,6 @@ freeall()
 
 IList ilnew(const Pool pool) {
 	return (IList) {
-		.n = 0,
 		.pool = pool,
 		.head = NULL
 	};
@@ -122,7 +121,6 @@ void ilpush(IList* const il, const uint i) {
 	head->i = i;
 	head->next = il->head;
 
-	il->n++;
 	il->head = head;
 }
 
@@ -130,7 +128,6 @@ uint ilpop(IList* const il) {
 	struct ILNode* head = il->head;
 	const int i = head->i;
 
-	il->n--;
 	il->head = head->next;
 
 	if (il->pool == PHeap) {
@@ -140,8 +137,8 @@ uint ilpop(IList* const il) {
 	return i;
 }
 
-void ilfree(IList* const il) {
-	while (il->n > 0) {
+void ilfree(IList* il) {
+	while (il) {
 		ilpop(il);
 	}
 }

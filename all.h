@@ -498,8 +498,8 @@ typedef enum {
 
 typedef struct IList IList;
 
+// TODO: don't actually need `n`
 struct IList {
-	size_t n;
 	Pool pool;
 	struct ILNode {
 		uint i;
