@@ -5,11 +5,11 @@
 static const Fn* fn;
 
 static int uses(const Ref r, int t) { // NOLINT(*-no-recursion)
-    if (r.type == RTmp) {
+    if (rtype(r) == RTmp) {
         return r.val == t;
     }
 
-    if (r.type == RMem) {
+    if (rtype(r) == RMem) {
         return uses(fn->mem[r.val].base, t) || uses(fn->mem[r.val].index, t);
     }
 
@@ -20,23 +20,22 @@ static void fillusedefs(Blk* const blk) {
     for (const Phi* phi = blk->phi; phi; phi = phi->link) {
         for (uint i = 0; i < phi->narg; i++) {
             const Ref arg = phi->arg[i];
-            if (arg.type == RTmp) { bsset(blk->uses, arg.val); }
+            if (rtype(arg) == RTmp) { bsset(blk->uses, arg.val); }
         }
 
         const Ref to = phi->to;
-        assert(to.type == RTmp);
+        assert(rtype(to) == RTmp);
         bsset(blk->defs, to.val);
     }
 
     for (const Ins* ins = blk->ins; ins < &blk->ins[blk->nins]; ins++) {
         for (int i = 0; i < 2; i++) {
             const Ref arg = ins->arg[i];
-            if (arg.type == RTmp) { bsset(blk->uses, arg.val); }
+            if (rtype(arg) == RTmp) { bsset(blk->uses, arg.val); }
         }
 
         const Ref to = ins->to;
-        assert(to.type == RTmp);
-        bsset(blk->defs, to.val);
+        if (rtype(to) == RTmp) { bsset(blk->defs, to.val); }
     }
 
     // aggregate uses, defs, out, into one bset; these are the only tmps involved in each dataflow pass
@@ -57,7 +56,7 @@ static float lptop(Blk* const blk, const int t) {
 
                 for (int i = 0; i < phi->narg; i++) {
                     const Ref arg = phi->arg[i];
-                    uses = uses || (arg.type == RTmp && arg.val == t);
+                    uses = uses || (rtype(arg) == RTmp && arg.val == t);
                 }
 
                 if (uses) {
