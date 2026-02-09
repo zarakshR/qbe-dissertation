@@ -38,6 +38,10 @@ static void fillusedefs(Blk* const blk) {
         if (rtype(to) == RTmp) { bsset(blk->defs, to.val); }
     }
 
+    if (rtype(blk->jmp.arg) == RTmp) {
+        bsset(blk->uses, blk->jmp.arg.val);
+    }
+
     // aggregate uses, defs, out, into one bset; these are the only tmps involved in each dataflow pass
     bsunion(blk->u, blk->uses);
     bsunion(blk->u, blk->defs);
