@@ -1,3 +1,4 @@
+#include <float.h>
 #include <math.h>
 
 #include "all.h"
@@ -10,7 +11,8 @@ static int uses(const Ref r, int t) { // NOLINT(*-no-recursion)
     }
 
     if (rtype(r) == RMem) {
-        return uses(fn->mem[r.val].base, t) || uses(fn->mem[r.val].index, t);
+        const Mem* m = &fn->mem[r.val];
+        return (uses(m->base, t) || uses(m->index, t));
     }
 
     return 0;
@@ -92,11 +94,13 @@ static float lptop(Blk* const blk, const int t) {
             }
 
             // no use or def found, but t in uses or defs
-            die("unreachable");
+            die("use/def mismatch");
         case NUDef:
             return 0;
         case NUUse:
             return 1;
+        default:
+            die("unreachable");
     }
 }
 
@@ -128,6 +132,8 @@ static float edtop(Blk* const blk, const int t) {
             return -1;
         case NUUse:
             return blk->nextuse[t].fudist;
+        default:
+            die("unreachable");
     }
 }
 
@@ -150,11 +156,11 @@ static float edbot(Blk* const blk, const int t) {
     return edbot;
 }
 
-static int liveprobblk(Blk* const blk, const int ntmp) {
+static int liveprobblk(Blk* const blk) {
     int changed = 0;
     int count = 0; // TODO: remove
 
-    for (int t = 0; bsiter(blk->u, &t); t++) {
+    for (int t = Tmp0; bsiter(blk->u, &t); t++) {
         const NextUse old = blk->nextuse[t];
         NextUse* const new = &blk->nextuse[t];
 
@@ -168,11 +174,11 @@ static int liveprobblk(Blk* const blk, const int ntmp) {
     return changed;
 }
 
-static int estdistblk(Blk* const blk, const int ntmp) {
+static int estdistblk(Blk* const blk) {
     int changed = 0;
     int count = 0; // TODO: remove
 
-    for (int t = 0; bsiter(blk->u, &t); t++) {
+    for (int t = Tmp0; bsiter(blk->u, &t); t++) {
         const NextUse old = blk->nextuse[t];
         NextUse* const new = &blk->nextuse[t];
 
@@ -186,6 +192,7 @@ static int estdistblk(Blk* const blk, const int ntmp) {
     return changed;
 }
 
+// requires rpo, use, prof
 void nextuse(const Fn* const fn_) {
     fn = fn_;
 
@@ -194,6 +201,12 @@ void nextuse(const Fn* const fn_) {
         bsinit(blk->defs, fn->ntmp);
         bsinit(blk->u, fn->ntmp);
         blk->nextuse = emalloc(sizeof blk->nextuse[0] * fn->ntmp);
+
+        // registers have minimum estimated distance, don't spill them
+        for (int t = 0; t < Tmp0; t++) {
+            blk->nextuse[t].edbot = -FLT_MAX;
+            blk->nextuse[t].edtop = -FLT_MAX;
+        }
 
         fillusedefs(blk);
     }
@@ -204,7 +217,7 @@ void nextuse(const Fn* const fn_) {
     ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
     while (wl.head) {
         Blk* blk = fn->rpo[ilpop(&wl)];
-        if (liveprobblk(blk, fn->ntmp)) {
+        if (liveprobblk(blk)) {
             for (uint i = 0; i < blk->npred; i++) {
                 ilpush(&wl, blk->pred[i]->id);
             }
@@ -215,7 +228,7 @@ void nextuse(const Fn* const fn_) {
     ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
     while (wl.head) {
         Blk* blk = fn->rpo[ilpop(&wl)];
-        if (estdistblk(blk, fn->ntmp)) {
+        if (estdistblk(blk)) {
             for (uint i = 0; i < blk->npred; i++) {
                 ilpush(&wl, blk->pred[i]->id);
             }
