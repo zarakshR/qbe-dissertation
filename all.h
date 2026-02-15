@@ -489,6 +489,10 @@ struct Dat {
 /* main.c */
 extern Target T;
 extern char debug['Z'+1];
+extern FILE* fprof; // profiling information
+extern char* filename; // filename
+extern int instrument; // instrumenting?
+extern int profiled; // have profiling stats?
 
 /* util.c */
 typedef enum {
@@ -572,7 +576,7 @@ bshas(BSet *bs, uint elt)
 
 /* parse.c */
 extern Op optab[NOp];
-void parse(FILE *, FILE *, char *, void (char *), void (Dat *), void (Fn *));
+void parse(FILE *, char *, void (char *), void (Dat *), void (Fn *));
 void printfn(Fn *, FILE *);
 void printref(Ref, Fn *, FILE *);
 void printcon(Con*, FILE*);
@@ -645,6 +649,11 @@ void filllive(Fn *);
 
 // nextuse.c
 void nextuse(const Fn*);
+
+// profile.c
+#define PROF_NEDGE 15013 // length of edge-count array
+_Static_assert(PROF_NEDGE <= SIZE_MAX, "PROF_NEDGE too high");
+void profile(Fn*);
 
 /* spill.c */
 void fillcost(Fn *);

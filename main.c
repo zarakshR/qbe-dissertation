@@ -19,6 +19,11 @@ char debug['Z'+1] = {
 	['B'] = 0, // branch probabilities
 };
 
+char* filename;
+int profiled;
+int instrument;
+FILE* fprof;
+
 extern Target T_amd64_sysv;
 extern Target T_amd64_apple;
 extern Target T_arm64;
@@ -59,6 +64,7 @@ func(Fn *fn)
 		fprintf(stderr, "\n> After parsing:\n");
 		printfn(fn, stderr);
 	}
+	profile(fn);
 	T.abi0(fn);
 	fillcfg(fn);
 	filluse(fn);
@@ -128,7 +134,8 @@ main(int ac, char *av[])
 
 	T = Deftgt;
 	outf = stdout;
-	while ((c = getopt(ac, av, "hd:o:t:")) != -1)
+	fprof = NULL;
+	while ((c = getopt(ac, av, "hd:o:t:p:i")) != -1)
 		switch (c) {
 		case 'd':
 			for (; *optarg; optarg++)
@@ -136,6 +143,17 @@ main(int ac, char *av[])
 					debug[toupper(*optarg)] = 1;
 					dbg = 1;
 				}
+			break;
+		case 'p':
+			profiled = 1;
+			fprof = fopen(optarg, "r");
+			if (!fprof) {
+				fprintf(stderr, "could not open: %s\n", optarg);
+				exit(1);
+			}
+			break;
+		case 'i':
+			instrument = 1;
 			break;
 		case 'o':
 			if (strcmp(optarg, "-") != 0) {
@@ -182,29 +200,18 @@ main(int ac, char *av[])
 
 	do {
 		f = av[optind];
-		FILE* prof = NULL;
+		filename = f;
 		if (!f || strcmp(f, "-") == 0) {
 			inf = stdin;
 			f = "-";
 		} else {
-			const size_t flen = strlen(f);
-			// ".prof" is 5 characters
-			char* profpath = alloc(flen + 5 + 1);
-			strcpy(profpath, f);
-			strcat(profpath, ".prof");
-			profpath[flen + 5] = '\0';
 			inf = fopen(f, "r");
-			// if .ssa.prof exists next to f, then it is profiling info
-			prof = fopen(profpath, "r");
-			if (prof) {
-				fprintf(stderr, "profile info found: %s\n", profpath);
-			}
 			if (!inf) {
 				fprintf(stderr, "cannot open '%s'\n", f);
 				exit(1);
 			}
 		}
-		parse(inf, prof, f, dbgfile, data, func);
+		parse(inf, f, dbgfile, data, func);
 		fclose(inf);
 	} while (++optind < ac);
 

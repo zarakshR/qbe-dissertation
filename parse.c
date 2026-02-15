@@ -147,15 +147,6 @@ enum {
 	M = 23,
 };
 
-// TODO: this is inefficient
-struct ProfInfo {
-	char* fname;
-	char* lblname;
-	uint64_t s1count;
-	uint64_t s2count;
-	struct ProfInfo* link;
-};
-
 static uchar lexh[1 << (32-M)];
 static FILE *inf;
 static char *inpath;
@@ -603,7 +594,7 @@ closeblk()
 }
 
 static PState
-parseline(PState ps, const struct ProfInfo* const profinfo)
+parseline(PState ps)
 {
 	Ref arg[NPred] = {R};
 	Blk *blk[NPred];
@@ -643,8 +634,6 @@ parseline(PState ps, const struct ProfInfo* const profinfo)
 			closeblk();
 			curb->jmp.type = Jjmp;
 			curb->s1 = b;
-			curb->s1prob = 1.0f;
-			curb->s2prob = 0.0f;
 		}
 		if (b->jmp.type != Jxxx)
 			err("multiple definitions of block @%s", b->name);
@@ -666,8 +655,6 @@ parseline(PState ps, const struct ProfInfo* const profinfo)
 		goto Close;
 	case Tjmp:
 		curb->jmp.type = Jjmp;
-		curb->s1prob = 1.0f;
-		curb->s2prob = 0.0f;
 		goto Jump;
 	case Tjnz:
 		curb->jmp.type = Jjnz;
@@ -685,18 +672,6 @@ parseline(PState ps, const struct ProfInfo* const profinfo)
 			curb->s2 = findblk(tokval.str);
 		}
 		if (curb->s1 == curf->start || curb->s2 == curf->start) { err("invalid jump to the start block"); }
-
-		if (profinfo) {
-			for (const struct ProfInfo* pi = profinfo; pi; pi = pi->link) {
-				if (strcmp(pi->fname, curf->name) == 0 && strcmp(pi->lblname, curb->name) == 0) {
-					curb->s1prob = (float) pi->s1count / (float) (pi->s1count + pi->s2count);
-					curb->s2prob = (float) pi->s2count / (float) (pi->s1count + pi->s2count);
-					goto Close;
-				}
-			}
-			err("profiler branch missing");
-		}
-
 		goto Close;
 	case Thlt:
 		curb->jmp.type = Jhlt;
@@ -917,7 +892,7 @@ typecheck(Fn *fn)
 }
 
 static Fn *
-parsefn(Lnk *lnk, const struct ProfInfo* const profinfo)
+parsefn(Lnk *lnk)
 {
 	Blk *b;
 	int i;
@@ -955,7 +930,7 @@ parsefn(Lnk *lnk, const struct ProfInfo* const profinfo)
 		err("function body must start with {");
 	ps = PLbl;
 	do
-		ps = parseline(ps, profinfo);
+		ps = parseline(ps);
 	while (ps != PEnd);
 	if (!curb)
 		err("empty function");
@@ -1227,46 +1202,11 @@ parselnk(Lnk *lnk)
 		}
 }
 
-static struct ProfInfo* parseprof(FILE* const f) {
-	char buf[512];
-	struct ProfInfo* pinfo = NULL;
-
-	while (fgets(buf, sizeof buf, f)) {
-		char* fname = strtok(buf, ":");
-		size_t fnamesz = strlen(fname);
-		char* lblname = strtok(NULL, ":");
-		size_t lblnamesz = strlen(lblname);
-		char* s1count = strtok(NULL, ":");
-		char* s2count = strtok(NULL, ":");
-
-		struct ProfInfo* pi = alloc(sizeof (struct ProfInfo));
-
-		pi->fname = alloc(fnamesz + 1);
-		strcpy(pi->fname, fname);
-
-		pi->lblname = alloc(lblnamesz + 1);
-		strcpy(pi->lblname, lblname);
-
-		pi->s1count = strtol(s1count, NULL, 10);
-		pi->s2count = strtol(s2count, NULL, 10);
-
-		pi->link = pinfo;
-		pinfo = pi;
-	}
-
-	return pinfo;
-}
-
 void
-parse(FILE *f, FILE* prof, char *path, void dbgfile(char *), void data(Dat *), void func(Fn *))
+parse(FILE *f, char *path, void dbgfile(char *), void data(Dat *), void func(Fn *))
 {
 	Lnk lnk;
 	uint n;
-
-	const struct ProfInfo* profinfo = NULL;
-	if (prof) {
-		profinfo = parseprof(prof);
-	}
 
 	lexinit();
 	inf = f;
@@ -1286,7 +1226,7 @@ parse(FILE *f, FILE* prof, char *path, void dbgfile(char *), void data(Dat *), v
 			break;
 		case Tfunc:
 			lnk.align = 16;
-			func(parsefn(&lnk, profinfo));
+			func(parsefn(&lnk));
 			break;
 		case Tdata:
 			parsedat(data, &lnk);
