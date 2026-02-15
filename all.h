@@ -43,6 +43,13 @@ enum {
 	NBit    = CHAR_BIT * sizeof(bits),
 };
 
+enum O {
+	Oxxx,
+#define O(op, x, y) O##op,
+	#include "ops.h"
+	NOp,
+};
+
 struct Target {
 	char name[16];
 	char apple;
@@ -56,7 +63,7 @@ struct Target {
 	int nrsave[2];
 	bits (*retregs)(Ref, int[2]);
 	bits (*argregs)(Ref, int[2]);
-	int (*memargs)(int);
+	int (*memargs)(enum O); // count no. of memargs
 	void (*abi0)(Fn *);
 	void (*abi1)(Fn *);
 	void (*isel)(Fn *);
@@ -80,7 +87,7 @@ struct BSet {
 
 enum Rty {
 	RTmp,
-	RCon,
+	RCon, // constant, possibly global name
 	RInt,
 	RType, /* last kind to come out of the parser */
 	RSlot,
@@ -93,7 +100,7 @@ struct Ref {
 	uint val:29; // val is index into tmp/const/mem pool
 };
 
-#define R        (Ref){RTmp, 0} // assigned register (hardware constraints etc.)
+#define R        (Ref){RTmp, 0} // invalid/dummy
 #define UNDEF    (Ref){RCon, 0}  /* represents uninitialized data */
 #define CON_Z    (Ref){RCon, 1}
 #define TMP(x)   (Ref){RTmp, x}
@@ -146,13 +153,6 @@ enum CmpF {
 	Cfuo,
 	NCmpF,
 	NCmp = NCmpI + NCmpF,
-};
-
-enum O {
-	Oxxx,
-#define O(op, x, y) O##op,
-	#include "ops.h"
-	NOp,
 };
 
 enum J {
@@ -365,7 +365,7 @@ struct Tmp {
 	struct {
 		int r;  /* register or -1 */
 		int w;  /* weight */
-		bits m; /* avoid these registers */
+		bits m; /* avoid these registers */ // i.e., there are parallel moves to these registers
 	} hint;
 	int phi;
 	Alias alias;
@@ -384,9 +384,9 @@ struct Tmp {
 
 struct Con {
 	enum {
-		CUndef,
-		CBits,
-		CAddr,
+		CUndef, // undefined
+		CBits, // literal
+		CAddr, // global addr
 	} type;
 	Sym sym;
 	union {
@@ -427,7 +427,7 @@ struct Fn {
 	int retty; // return type /* index in typ[], -1 if no aggregate return */
 	Ref retr;
 	Blk **rpo; // blocks in reverse post-order
-	bits reg; // registers used in function
+	bits reg; // registers clobbered in function
 	int slot;
 	int salign;
 	char vararg;

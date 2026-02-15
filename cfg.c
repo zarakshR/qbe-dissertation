@@ -215,7 +215,7 @@ loopmark(Blk* hd, Blk* b, void f(Blk*, Blk*)) {
     for (uint p = 0; p < b->npred; ++p) { loopmark(hd, b->pred[p], f); }
 }
 
-// calls `loopmark(b, p, f)` for each block b, p such that backedge from p to b exists
+// calls `loopmark(b, s, f)` for each block b, s such that backedge from s to b exists
 void
 loopiter(Fn* fn, void f(Blk*, Blk*)) {
     for (Blk* b = fn->start; b; b = b->link) {

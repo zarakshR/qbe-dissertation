@@ -19,7 +19,7 @@ int arm64_rclob[] = {
 #define RGLOB (BIT(FP) | BIT(SP) | BIT(IP1) | BIT(R18))
 
 static int
-arm64_memargs(int op)
+arm64_memargs(enum O op)
 {
 	(void)op;
 	return 0;

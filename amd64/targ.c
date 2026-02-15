@@ -7,7 +7,7 @@ Amd64Op amd64_op[NOp] = {
 };
 
 static int
-amd64_memargs(int op)
+amd64_memargs(enum O op)
 {
 	return amd64_op[op].nmem;
 }

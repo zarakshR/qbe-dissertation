@@ -9,6 +9,7 @@ typedef struct RMap RMap;
 
 struct RMap {
     // tmp `t[n]` is assigned to reg `r[n]`
+    // `t[t] == t` if t is allocated but not assigned
     int t[Tmp0];
     int r[Tmp0];
     int w[Tmp0]; /* wait list, for unmatched hints */
@@ -84,14 +85,14 @@ rref(RMap* map, int t) {
     return SLOT(tmp[t].slot);
 }
 
-// map tmp `t` to reg `r`
+// map tmp `t` to `r`
 static void
 radd(RMap* map, int t, int r) {
     assert((t >= Tmp0 || t == r) && "invalid temporary");
     assert((isgpr(r) || isfpr(r)) && "invalid register");
     assert(!bshas(map->mapped, t) && "temporary has mapping");
     assert(!bshas(map->mapped, r) && "register already allocated");
-    assert(map->n <= T.ngpr+T.nfpr && "too many mappings"); // NOTE: this may need to be a `<` instead of `<=`
+    assert(map->n <= T.ngpr+T.nfpr && "too many mappings");
     bsset(map->mapped, t);
     bsset(map->mapped, r);
     map->t[map->n] = t;
@@ -114,7 +115,6 @@ static Ref ralloctmp(RMap* const map, const int t, const int r) {
 
 static Ref
 ralloctry(RMap* map, int t, int try) {
-    // is register
     if (t < Tmp0) {
         assert(bshas(map->mapped, t));
         return TMP(t);
@@ -159,7 +159,7 @@ ralloctry(RMap* map, int t, int try) {
             return ralloctmp(map, t, r);
         }
 
-        // if none, try allocate reg that is not yet mapped
+        // if none, try allocate anything
         for (r = start; r < end; r++) {
             if (bshas(map->mapped, r)) { continue; }
             return ralloctmp(map, t, r);
@@ -301,7 +301,7 @@ move(int r, Ref to, RMap* m) {
 }
 
 static int
-isregcpy(Ins* i) {
+isregcpy(const Ins* i) {
     return i->op == Ocopy && isreg(i->arg[0]);
 }
 
@@ -312,7 +312,7 @@ dopm(Blk* b, Ins* i, RMap* map) {
     Ins* i1,* ip;
     bits def;
 
-    m0 = *map; /* okay since we don't use m0.b */
+    m0 = *map; /* okay since we don't use m0.mapped */
     m0.mapped->t = 0;
     i1 = ++i;
     do {
@@ -347,7 +347,7 @@ dopm(Blk* b, Ins* i, RMap* map) {
     return i;
 }
 
-// priority for return 1 if `r1` has higher priority else 0
+// priority for reallocating args
 static int
 prio1(Ref r1, Ref r2) {
     /* trivial heuristic to begin with,
@@ -371,14 +371,15 @@ insert(Ref* r, Ref** rs, int p) {
 
 static void
 doblk(Blk* b, RMap* cur) {
-    int t, x, r, rf, rt, nr;
-    bits rs;
+    int t, x, rf, rt, nr;
     Ins* i,* i1;
     Mem* m;
     Ref* ra[4];
 
-    if (rtype(b->jmp.arg) == RTmp)
+    if (rtype(b->jmp.arg) == RTmp) {
         b->jmp.arg = ralloc(cur, b->jmp.arg.val);
+    }
+
     curi = &insb[NIns];
     for (i1 = &b->ins[b->nins]; i1 != b->ins;) {
         emiti(*--i1);
@@ -386,30 +387,34 @@ doblk(Blk* b, RMap* cur) {
         rf = -1;
         switch (i->op) {
             case Ocall:
-                rs = T.argregs(i->arg[1], 0) | T.rglob;
-                for (r = 0; T.rsave[r] >= 0; r++)
-                    if (!(BIT(T.rsave[r]) & rs))
-                        rfree(cur, T.rsave[r]);
+                // if clobbered, free tmp
+                const bits clob = T.argregs(i->arg[1], 0) | T.rglob;
+                for (int r = 0; r < T.nrsave[KINT] + T.nrsave[KFLT]; r++) {
+                    if (BIT(T.rsave[r]) & clob) { continue; }
+                    rfree(cur, T.rsave[r]);
+                }
                 break;
             case Ocopy:
+                // handle spills from pmove
                 if (isregcpy(i)) {
                     curi++;
                     i1 = dopm(b, i1, cur);
                     stmov += i + 1 - curi;
                     continue;
                 }
-                if (isreg(i->to))
-                    if (rtype(i->arg[0]) == RTmp)
-                        sethint(i->arg[0].val, i->to.val);
+                if (isreg(i->to)) {
+                    if (rtype(i->arg[0]) == RTmp) { sethint(i->arg[0].val, i->to.val); }
+                }
             /* fall through */
             default:
                 if (!req(i->to, R)) {
                     assert(rtype(i->to) == RTmp);
-                    r = i->to.val;
+                    int r = i->to.val;
                     if (r < Tmp0 && (BIT(r) & T.rglob))
                         break;
                     rf = rfree(cur, r);
                     if (rf == -1) {
+                        // was a write to slot
                         assert(!isreg(i->to));
                         curi++;
                         continue;
@@ -432,16 +437,18 @@ doblk(Blk* b, RMap* cur) {
                 case RTmp:
                     insert(&i->arg[x], ra, nr++);
                     break;
+                default:
+                    break;
             }
         }
 
-        for (r = 0; r < nr; r++) {
+        for (int r = 0; r < nr; r++) {
             *ra[r] = ralloc(cur, ra[r]->val);
         }
 
-        // (??) why doesn't this skip `emit`?
-        if (i->op == Ocopy && req(i->to, i->arg[0]))
+        if (i->op == Ocopy && req(i->to, i->arg[0])) {
             curi++;
+        }
 
         /* try to change the register of a hinted
          * temporary if rf is available */
@@ -454,7 +461,7 @@ doblk(Blk* b, RMap* cur) {
                 emit(Ocopy, tmp[t].cls, TMP(rt), TMP(rf), R);
                 stmov += 1;
                 cur->w[rf] = 0;
-                for (r = 0; r < nr; r++)
+                for (int r = 0; r < nr; r++)
                     if (req(*ra[r], TMP(rt)))
                         *ra[r] = TMP(rf);
                 /* one could iterate this logic with
@@ -502,7 +509,6 @@ prio2(int t1, int t2) {
 void
 rega(Fn* fn) {
     // scratch data
-    int j, t, r, x;
     uint u, n;
 
     // end[n]/beg[n] is the register mapping at the end/start of block n
@@ -522,40 +528,28 @@ rega(Fn* fn) {
     }
 
     loop = INT_MAX;
-    for (t = 0; t < fn->ntmp; t++) {
+    for (int t = 0; t < fn->ntmp; t++) {
         tmp[t].hint.r = t < Tmp0 ? t : -1;
         tmp[t].hint.w = loop;
         tmp[t].visit = -1;
     }
 
-    Blk** blk = alloc(fn->nblk * sizeof blk[0]);
-    // initialize `blk` array from `b` linked list; `blk` will contain blocks in program order
-    {
-        int i = 0;
-        for (Blk* b = fn->start; b; b = b->link) { blk[i++] = b; }
-    }
-
     // sort blocks by loop nesting-depth; most nested loop first
+    Blk** blk = alloc(fn->nblk * sizeof blk[0]);
+    {
+        Blk* b = fn->start;
+        for (int i = 0; i < fn->nblk; i++) {
+            blk[i] = b;
+            b = b->link;
+        }
+    }
     qsort(blk, fn->nblk, sizeof blk[0], carve);
 
-    // fprintf(stderr, "tmps: %d\n", fn->ntmp);
-    {
-        // Blk* b;
-        // for (b = fn->start; b; b = b->link) {
-        //     fprintf(stderr, "%s (%p, %p)", b->name, b->s1, b->s2);
-        //     fprintf(stderr, "\n");
-        // }
-    }
-
-    // process register hints (for loading from parameters into locals)
-    // register hints are listed first in the function body (i.e., in fn->start) as copy instructions
-    // i.e., any `%t =_ copy %p` at the start of the function is a hint to use same register for `t` as for `p`
+    // func params passed in in regs are copied to tmps at start of start block; hint then to use callconv regs
     for (uint i = 0; i < fn->start->nins; i++) {
         Ins ins = fn->start->ins[i];
-        // hints are always copies from reg to reg
         if (ins.op != Ocopy || !isreg(ins.arg[0])) { break; }
         assert(rtype(ins.to) == RTmp);
-        // hint that the dst should use same register as the src
         sethint(ins.to.val, ins.arg[0].val);
     }
 
@@ -571,12 +565,11 @@ rega(Fn* fn) {
         bszero(cur.mapped);
         memset(cur.w, 0, sizeof cur.w);
 
-        // `rl` 0 .. `x` inclusive contains tmps that must be in registers (post-spill invariant)
+        // `rl` [0..x] will contains tmps that must be in registers in increasing priority
+        int x = 0;
         int rl[Tmp0];
-
-        // `x` tracks total number of registers allocated so far
-        for (x = 0, t = Tmp0; bsiter(b->out, &t); t++) {
-            j = x++;
+        for (int t = Tmp0; bsiter(b->out, &t); t++) {
+            int j = x++;
             rl[j] = t;
             // bubble `t` down to its correct spot
             while (j-- > 0 && prio2(t, rl[j]) > 0) {
@@ -585,25 +578,23 @@ rega(Fn* fn) {
             }
         }
 
-        // (??) registers are mapped to themselves
-        for (r = 0; bsiter(b->out, &r) && r < Tmp0; r++) { radd(&cur, r, r); }
+        // initialize out regs
+        for (int rout = 0; bsiter(b->out, &rout) && rout < Tmp0; rout++) { radd(&cur, rout, rout); }
 
-        // for each assigned register, allocate a register
-        for (j = 0; j < x; j++) { ralloctry(&cur, rl[j], 1); }
-        for (j = 0; j < x; j++) { ralloc(&cur, rl[j]); }
+        // for each allocated register, assign a register
+        // try to allocate hinted tmps first
+        for (int j = 0; j < x; j++) { ralloctry(&cur, rl[j], 1); }
+        for (int j = 0; j < x; j++) { ralloc(&cur, rl[j]); }
 
-        // end <- cur
         rmapcpy(&end[b->id], &cur);
 
         doblk(b, &cur);
-        bscopy(b->in, cur.mapped);
 
-        // remove any tmps defined by phis from `b->in`
+        bscopy(b->in, cur.mapped);
         for (Phi* p = b->phi; p; p = p->link) {
             if (rtype(p->to) == RTmp) { bsclr(b->in, p->to.val); }
         }
 
-        // beg <- cur
         rmapcpy(&beg[b->id], &cur);
     }
 
@@ -625,13 +616,16 @@ rega(Fn* fn) {
          * predecessor, we have to find the
          * corresponding argument */
         for (Phi* p = b->phi; p; p = p->link) {
-            if (rtype(p->to) != RTmp || (r = rfind(map, p->to.val)) == -1) { continue; }
+            if (rtype(p->to) != RTmp) { continue; }
+
+            int r = rfind(map, p->to.val);
+            if (r == -1) { continue; }
 
             for (u = 0; u < p->narg; u++) {
                 Blk* srcblk = p->blk[u];
                 Ref src = p->arg[u];
                 if (rtype(src) != RTmp) { continue; }
-                x = rfind(&end[srcblk->id], src.val);
+                int x = rfind(&end[srcblk->id], src.val);
                 if (x == -1) {
                     /* spilled */
                     continue;
@@ -642,12 +636,12 @@ rega(Fn* fn) {
         }
 
         /* process non-phis temporaries */
-        for (j = 0; j < map->n; j++) {
-            t = map->t[j];
-            r = map->r[j];
+        for (int j = 0; j < map->n; j++) {
+            int t = map->t[j];
+            int r = map->r[j];
             if (rl[r] || t < Tmp0 /* todo, remove this */) { continue; }
             for (Blk** pred = b->pred; pred < &b->pred[b->npred]; pred++) {
-                x = rfind(&end[(*pred)->id], t);
+                int x = rfind(&end[(*pred)->id], t);
                 if (x == -1) /* spilled */
                     continue;
                 rl[r] = (!rl[r] || rl[r] == x) ? x : -1;
@@ -656,10 +650,10 @@ rega(Fn* fn) {
         }
 
         npm = 0;
-        for (j = 0; j < map->n; j++) {
-            t = map->t[j];
-            r = map->r[j];
-            x = rl[r];
+        for (int j = 0; j < map->n; j++) {
+            int t = map->t[j];
+            int r = map->r[j];
+            int x = rl[r];
             assert(x != 0 || t < Tmp0 /* todo, ditto */);
             if (x != -1 && !bshas(map->mapped, x)) {
                 pmadd(TMP(x), TMP(r), tmp[t].cls);
@@ -669,7 +663,7 @@ rega(Fn* fn) {
         }
         curi = &insb[NIns];
         pmgen();
-        j = &insb[NIns] - curi;
+        int j = &insb[NIns] - curi;
         if (j == 0) { continue; }
         stmov += j;
         b->nins += j;
@@ -704,7 +698,7 @@ rega(Fn* fn) {
                 Ref dst = p->to;
                 assert(rtype(dst)==RSlot || rtype(dst)==RTmp);
                 if (rtype(dst) == RTmp) {
-                    r = rfind(&beg[s->id], dst.val);
+                    int r = rfind(&beg[s->id], dst.val);
                     if (r == -1) { continue; }
                     dst = TMP(r);
                 }
@@ -713,7 +707,7 @@ rega(Fn* fn) {
                 if (rtype(src) == RTmp) { src = rref(&end[b->id], src.val); }
                 pmadd(src, dst, p->cls);
             }
-            for (t = Tmp0; bsiter(s->in, &t); t++) {
+            for (int t = Tmp0; bsiter(s->in, &t); t++) {
                 Ref src = rref(&end[b->id], t);
                 Ref dst = rref(&beg[s->id], t);
                 pmadd(src, dst, tmp[t].cls);
