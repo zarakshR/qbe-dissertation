@@ -185,7 +185,7 @@ static int estdistblk(Blk* const blk) {
         new->edbot = edbot(blk, t);
         new->edtop = edtop(blk, t);
 
-        if (new->edtop != old.edtop || new->edbot != old.edbot) { changed = 1; }
+        if (fabsf(new->edbot - old.edbot) > 0.0001f || fabsf(new->edtop - old.edtop) > 0.0001f) { changed = 1; }
         count++;
     }
 
