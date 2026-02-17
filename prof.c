@@ -129,9 +129,10 @@ static void do_instrument() {
 static void do_profile() {
     uint32_t edge_counts[PROF_NEDGE];
 
+    rewind(fprof);
     size_t x = fread(edge_counts, sizeof edge_counts[0], PROF_NEDGE, fprof);
     if (x != PROF_NEDGE) {
-        fprintf(stderr, "invalid read from prof.out\n");
+        fprintf(stderr, "invalid read from prof.out: %zu\n", x);
         exit(1);
     }
 
