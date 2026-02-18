@@ -15,7 +15,6 @@ asm=$tmp.s
 asmref=$tmp.ref.s
 exe=$tmp.exe
 out=$tmp.out
-proflib=$dir/../amd64/proflib.c # hack
 
 qemu_not_needed() {
 	"$@"
@@ -157,7 +156,7 @@ once() {
 
 	printf "%-45s" "$(basename $t)..."
 
-	if ! $bin -p -o $asm $t
+	if ! $bin -o $asm $t
 	then
 		echo "[qbe fail]"
 		return 1
@@ -178,7 +177,7 @@ once() {
 		src="$asm"
 	fi
 
-	if ! $cc -g -o $exe $proflib $src $ccpost
+	if ! $cc -g -o $exe $src $ccpost
 	then
 		echo "[cc fail]"
 		return 1

@@ -82,16 +82,6 @@ fillcost(Fn* fn) {
             tmpuse(i->to, 0, b->loop, fn);
             tmpuse(i->arg[0], 1, b->loop, fn);
             tmpuse(i->arg[1], 1, b->loop, fn);
-
-            // add distance to next use
-            if (rtype(i->to) == RTmp && i->to.val >= Tmp0) {
-                int dist = 1;
-                for (Ins* j = i + 1; j < &b->ins[b->nins]; j++, dist++) {
-                    if (req(i->to, j->arg[0]) || req(i->to, j->arg[1])) {
-                        break;
-                    }
-                }
-            }
         }
         tmpuse(b->jmp.arg, 1, b->loop, fn);
     }
