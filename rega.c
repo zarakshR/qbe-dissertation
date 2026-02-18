@@ -389,7 +389,7 @@ doblk(Blk* b, RMap* cur) {
             case Ocall:
                 // if clobbered, free tmp
                 const bits clob = T.argregs(i->arg[1], 0) | T.rglob;
-                for (int r = 0; r < T.nrsave[KINT] + T.nrsave[KFLT]; r++) {
+                for (int r = 0; T.rsave[r] >= 0; r++) {
                     if (BIT(T.rsave[r]) & clob) { continue; }
                     rfree(cur, T.rsave[r]);
                 }
@@ -547,10 +547,10 @@ rega(Fn* fn) {
 
     // func params passed in in regs are copied to tmps at start of start block; hint then to use callconv regs
     for (uint i = 0; i < fn->start->nins; i++) {
-        Ins ins = fn->start->ins[i];
-        if (ins.op != Ocopy || !isreg(ins.arg[0])) { break; }
-        assert(rtype(ins.to) == RTmp);
-        sethint(ins.to.val, ins.arg[0].val);
+        Ins* ins = &fn->start->ins[i];
+        if (ins->op != Ocopy || !isreg(ins->arg[0])) { break; }
+        assert(rtype(ins->to) == RTmp);
+        sethint(ins->to.val, ins->arg[0].val);
     }
 
     /* 2. allocate registers starting from block end */
