@@ -155,7 +155,7 @@ ralloctry(RMap* map, int t, int try) {
 
         // try allocate reg that does not have avoid hint
         for (r = start; r < end; r++) {
-            if (avoid && BIT(r)) { continue; }
+            if (avoid & BIT(r)) { continue; }
             return ralloctmp(map, t, r);
         }
 
