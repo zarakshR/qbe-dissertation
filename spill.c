@@ -108,18 +108,10 @@ static BSet mask[2][1]; /* class masks */
 // comparator to sort tmps by estimated distance, fallbacks to spill cost
 static int
 tcmp0(const void* pa, const void* pb) {
-    const Tmp ta = tmp[*(int*) pa];
-    const Tmp tb = tmp[*(int*) pb];
-
-    const float ta_ed = nu[*(int*) pa].edbot + off;
-    const float tb_ed = nu[*(int*) pb].edbot + off;
-
-    // fallback to spill costs
-    if (ta_ed == tb_ed) {
-        return ta.cost < tb.cost ? 1 : -1;
-    }
-
-    return ta_ed > tb_ed ? 1 : -1;
+    uint ca, cb;
+    ca = tmp[*(int *)pa].cost;
+    cb = tmp[*(int *)pb].cost;
+    return (cb < ca) ? -1 : (cb > ca);
 }
 
 static int
