@@ -297,12 +297,12 @@ dopm(const Blk* b, Ins* i, BSet* live) {
     if (i != b->ins && (i - 1)->op == Ocall) {
         int n;
         live->t[0] &= ~T.retregs((i - 1)->arg[1], 0);
-        limit2(live, T.nrsave[0], T.nrsave[1], 0, b->nextuse, i - b->ins);
+        limit2(live, T.nrsave[0], T.nrsave[1], 0, b->nextuse, &b->ins[b->nins] - i);
         for (n = 0, r = 0; T.rsave[n] >= 0; n++)
             r |= BIT(T.rsave[n]);
         live->t[0] |= T.argregs((i - 1)->arg[1], 0);
     } else {
-        limit2(live, 0, 0, 0, b->nextuse, i - b->ins);
+        limit2(live, 0, 0, 0, b->nextuse, &b->ins[b->nins] - i);
         r = live->t[0];
     }
     sethint(live, r);
@@ -519,7 +519,7 @@ spill(Fn* fn) {
             }
 
             bscopy(u, live);
-            limit2(live, 0, 0, w, blk->nextuse, i - blk->ins);
+            limit2(live, 0, 0, w, blk->nextuse, &blk->ins[blk->nins] - i);
 
             for (int a = 0; a < 2; a++) {
                 if (rtype(i->arg[a]) == RTmp) {
