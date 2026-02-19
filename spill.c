@@ -102,7 +102,7 @@ static int locs; /* stack size used by locals */
 static int slot4; /* next slot of 4 bytes */
 static int slot8; /* ditto, 8 bytes */
 static NextUse* nu; // nextuse info.
-static int off; // nextuse offset from current block
+static int end_d; // distance from current instruction to block end
 static BSet mask[2][1]; /* class masks */
 
 // comparator to sort tmps by estimated distance, fallbacks to spill cost
@@ -170,7 +170,7 @@ slot(int t) {
  */
 // TODO: each `limit` call must accept block and index into block instructions for est distance, ensure handling of jmp correctly
 static void
-limit(BSet* b, int k, BSet* f, NextUse* const blk_nu, int blk_off) {
+limit(BSet* b, int k, BSet* f, NextUse* const blk_nu, int blk_end_d) {
     static int* tarr, maxt;
     int i, t;
 
@@ -187,7 +187,7 @@ limit(BSet* b, int k, BSet* f, NextUse* const blk_nu, int blk_off) {
     }
     if (nt > 1) {
         nu = blk_nu;
-        off = blk_off;
+        end_d = blk_end_d;
 
         if (!f) {
             qsort(tarr, nt, sizeof tarr[0], tcmp0);

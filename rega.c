@@ -387,10 +387,10 @@ doblk(Blk* b, RMap* cur) {
         rf = -1;
         switch (i->op) {
             case Ocall:
-                // if clobbered, free tmp
-                const bits clob = T.argregs(i->arg[1], 0) | T.rglob;
+                // unmap all non caller-saved args
+                const bits args = T.argregs(i->arg[1], 0) | T.rglob;
                 for (int r = 0; T.rsave[r] >= 0; r++) {
-                    if (BIT(T.rsave[r]) & clob) { continue; }
+                    if (BIT(T.rsave[r]) & args) { continue; }
                     rfree(cur, T.rsave[r]);
                 }
                 break;
@@ -560,8 +560,8 @@ rega(Fn* fn) {
 
         // zero initialize `cur`
         RMap cur;
-        bsinit(cur.mapped, fn->ntmp);
         cur.n = 0;
+        bsinit(cur.mapped, fn->ntmp);
         bszero(cur.mapped);
         memset(cur.w, 0, sizeof cur.w);
 
