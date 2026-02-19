@@ -105,13 +105,25 @@ static NextUse* nu; // nextuse info.
 static int end_d; // distance from current instruction to block end
 static BSet mask[2][1]; /* class masks */
 
-// comparator to sort tmps by estimated distance, fallbacks to spill cost
-static int
-tcmp0(const void* pa, const void* pb) {
-    uint ca, cb;
-    ca = tmp[*(int *)pa].cost;
-    cb = tmp[*(int *)pb].cost;
-    return (cb < ca) ? -1 : (cb > ca);
+static int tcmp0(const void* pa, const void* pb) {
+    const int a = *(int *)pa;
+    const int b = *(int *)pb;
+
+    if (a < Tmp0 && b < Tmp0) { return 0; }
+    if (a < Tmp0) { return -1; }
+    if (b < Tmp0) { return 1; }
+
+    if (nu[a].edbot == -1 && nu[b].edbot == -1) {
+        // won't matter
+        return tmp[b].cost - tmp[a].cost;
+    }
+    if (nu[a].edbot == -1) { return 1; }
+    if (nu[b].edbot == -1) { return -1; }
+
+    const float a_score = (end_d + nu[a].edbot) / tmp[a].cost;
+    const float b_score = (end_d + nu[a].edbot) / tmp[b].cost;
+
+    return (a_score < b_score) ? -1 : (a_score > b_score);
 }
 
 static int
