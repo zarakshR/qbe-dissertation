@@ -120,8 +120,8 @@ static int tcmp0(const void* pa, const void* pb) {
     if (nu[a].edbot == -1) { return 1; }
     if (nu[b].edbot == -1) { return -1; }
 
-    const float a_score = (end_d + nu[a].edbot) / tmp[a].cost;
-    const float b_score = (end_d + nu[a].edbot) / tmp[b].cost;
+    const float a_score = (end_d + nu[a].edbot);
+    const float b_score = (end_d + nu[a].edbot);
 
     return (a_score < b_score) ? -1 : (a_score > b_score);
 }
