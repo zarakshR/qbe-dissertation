@@ -93,6 +93,12 @@ static float lptop(Blk* const blk, const int t) {
                 }
             }
 
+            if (uses(blk->jmp.arg, t)) {
+                blk->nextuse[t].first = NUUse;
+                blk->nextuse[t].fudist = blk->nins;
+                return 1;
+            }
+
             // no use or def found, but t in uses or defs
             die("use/def mismatch");
         case NUDef:
@@ -214,7 +220,9 @@ void nextuse(const Fn* const fn_) {
     IList wl = ilnew(PFn); // worklist
 
     // liveness probability data-flow
-    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
+    for (int i = 0; i < fn->nblk; i++) {
+        ilpush(&wl, fn->rpo[i]->id);
+    }
     while (wl.head) {
         Blk* blk = fn->rpo[ilpop(&wl)];
         if (liveprobblk(blk)) {
@@ -225,7 +233,9 @@ void nextuse(const Fn* const fn_) {
     }
 
     // estimated distance data-flow
-    ilpush(&wl, fn->rpo[fn->nblk - 1]->id);
+    for (int i = 0; i < fn->nblk; i++) {
+        ilpush(&wl, fn->rpo[i]->id);
+    }
     while (wl.head) {
         Blk* blk = fn->rpo[ilpop(&wl)];
         if (estdistblk(blk)) {
