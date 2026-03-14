@@ -101,29 +101,28 @@ static int ntmp; /* current # of temps (for limit) */
 static int locs; /* stack size used by locals */
 static int slot4; /* next slot of 4 bytes */
 static int slot8; /* ditto, 8 bytes */
-static NextUse* nu; // nextuse info.
-static int end_d; // distance from current instruction to block end
 static BSet mask[2][1]; /* class masks */
+static const float* edist;
 
 static int tcmp0(const void* pa, const void* pb) {
     const int a = *(int *)pa;
     const int b = *(int *)pb;
 
-    if (a < Tmp0 && b < Tmp0) { return 0; }
+    if (a < Tmp0 && b < Tmp0) { return 0; } // all registers are equal
     if (a < Tmp0) { return -1; }
     if (b < Tmp0) { return 1; }
 
-    if (nu[a].edbot == -1 && nu[b].edbot == -1) {
-        // won't matter
-        return tmp[b].cost - tmp[a].cost;
-    }
-    if (nu[a].edbot == -1) { return 1; }
-    if (nu[b].edbot == -1) { return -1; }
+    const float a_dist = edist[a];
+    const float b_dist = edist[b];
 
-    const float a_score = (end_d + nu[a].edbot);
-    const float b_score = (end_d + nu[a].edbot);
+    if (a_dist == -1 && b_dist == -1) { return 0; } // doesn't matter
+    if (b_dist == -1) { return -1; }
+    if (a_dist == -1) { return 1; }
 
-    return (a_score < b_score) ? -1 : (a_score > b_score);
+    const float a_score = a_dist * (tmp[a].cost);
+    const float b_score = b_dist * (tmp[b].cost);
+
+    return b_score < a_score ? -1 : (a_score == b_score ? 0 : 1);
 }
 
 static int
@@ -180,9 +179,8 @@ slot(int t) {
  * those with the largest spill
  * cost
  */
-// TODO: each `limit` call must accept block and index into block instructions for est distance, ensure handling of jmp correctly
 static void
-limit(BSet* b, int k, BSet* f, NextUse* const blk_nu, int blk_end_d) {
+limit(BSet* b, int k, BSet* f, const float* const _edist) {
     static int* tarr, maxt;
     int i, t;
 
@@ -198,8 +196,7 @@ limit(BSet* b, int k, BSet* f, NextUse* const blk_nu, int blk_end_d) {
         tarr[i++] = t;
     }
     if (nt > 1) {
-        nu = blk_nu;
-        end_d = blk_end_d;
+        edist = _edist;
 
         if (!f) {
             qsort(tarr, nt, sizeof tarr[0], tcmp0);
@@ -212,7 +209,9 @@ limit(BSet* b, int k, BSet* f, NextUse* const blk_nu, int blk_end_d) {
         bsset(b, tarr[i]);
     }
     for (; i < nt; i++) {
-        slot(tarr[i]);
+        if (_edist[tarr[i]] != -1) {
+            slot(tarr[i]);
+        }
     }
 }
 
@@ -223,15 +222,15 @@ limit(BSet* b, int k, BSet* f, NextUse* const blk_nu, int blk_end_d) {
  * currently in use
  */
 static void
-limit2(BSet* b1, int kint, int kflt, BSet* f, const NextUse* const nu, const int off) {
+limit2(BSet* b1, int kint, int kflt, BSet* f, const float* const _edist) {
     BSet b2[1];
 
     bsinit(b2, ntmp); /* todo, free those */
     bscopy(b2, b1);
     bsinter(b1, mask[KINT]);
     bsinter(b2, mask[KFLT]);
-    limit(b1, T.ngpr - kint, f, nu, off);
-    limit(b2, T.nfpr - kflt, f, nu, off);
+    limit(b1, T.ngpr - kint, f, _edist);
+    limit(b2, T.nfpr - kflt, f, _edist);
     bsunion(b1, b2);
 }
 
@@ -301,12 +300,12 @@ dopm(const Blk* b, Ins* i, BSet* live) {
     if (i != b->ins && (i - 1)->op == Ocall) {
         int n;
         live->t[0] &= ~T.retregs((i - 1)->arg[1], 0);
-        limit2(live, T.nrsave[0], T.nrsave[1], 0, b->nextuse, &b->ins[b->nins] - i);
+        limit2(live, T.nrsave[0], T.nrsave[1], 0, i->edist);
         for (n = 0, r = 0; T.rsave[n] >= 0; n++)
             r |= BIT(T.rsave[n]);
         live->t[0] |= T.argregs((i - 1)->arg[1], 0);
     } else {
-        limit2(live, 0, 0, 0, b->nextuse, &b->ins[b->nins] - i);
+        limit2(live, 0, 0, 0, i->edist);
         r = live->t[0];
     }
     sethint(live, r);
@@ -404,10 +403,10 @@ spill(Fn* fn) {
                 if (bscount(u) < nreg) {
                     const int j = (int) bscount(w); /* live through */
                     const int l = header->nlive[k];
-                    limit(w, nreg - (l - j), 0, blk->nextuse, 0);
+                    limit(w, nreg - (l - j), 0, blk->jmp.edist);
                     bsunion(u, w);
                 } else {
-                    limit(u, nreg, 0, blk->nextuse, 0);
+                    limit(u, nreg, 0, blk->jmp.edist);
                 }
 
                 bsunion(live, u);
@@ -423,7 +422,7 @@ spill(Fn* fn) {
                 bsinter(w, u); // w &= u
             }
             // prefer tmps that are phi args to (both) successors
-            limit2(live, 0, 0, w, blk->nextuse, 0);
+            limit2(live, 0, 0, w, blk->jmp.edist);
         } else {
             // exit block
             bscopy(live, blk->out);
@@ -453,7 +452,7 @@ spill(Fn* fn) {
             lvarg[KINT] = bshas(live, t);
             bsset(live, t);
             bscopy(u, live);
-            limit2(live, 0, 0, NULL, blk->nextuse, 0);
+            limit2(live, 0, 0, NULL, blk->jmp.edist);
             if (!bshas(live, t)) {
                 if (!lvarg[KINT]) {
                     bsclr(u, t);
@@ -523,7 +522,7 @@ spill(Fn* fn) {
             }
 
             bscopy(u, live);
-            limit2(live, 0, 0, w, blk->nextuse, &blk->ins[blk->nins] - i);
+            limit2(live, 0, 0, w, i->edist);
 
             for (int a = 0; a < 2; a++) {
                 if (rtype(i->arg[a]) == RTmp) {

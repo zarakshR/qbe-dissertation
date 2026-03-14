@@ -191,14 +191,68 @@ static int estdistblk(Blk* const blk) {
         new->edbot = edbot(blk, t);
         new->edtop = edtop(blk, t);
 
-        if (fabsf(new->edbot - old.edbot) > 0.0001f || fabsf(new->edtop - old.edtop) > 0.0001f) { changed = 1; }
+        if (fabsf(new->edbot - old.edbot) > 0.0001f || fabsf(new->edtop - old.edtop) > 0.0001f) {
+            changed = 1;
+        }
         count++;
     }
 
     return changed;
 }
 
-// requires rpo, use, prof
+static void filldist(Blk* const blk) {
+    const size_t width = sizeof(float) * fn->ntmp;
+    float* const edist = emalloc(width);
+
+    for (int t = Tmp0; t < fn->ntmp; t++) {
+        edist[t] = blk->nextuse[t].edbot;
+    }
+
+    blk->jmp.edist = emalloc(width);
+    memcpy(blk->jmp.edist, edist, width);
+
+    if (rtype(blk->jmp.arg) == RTmp) {
+        edist[blk->jmp.arg.val] = 1.0f;
+    }
+
+    for (Ins* i = &blk->ins[blk->nins]; i != blk->ins;) {
+        i--;
+
+        i->edist = emalloc(width);
+        memcpy(i->edist, edist, width);
+
+        for (int t = Tmp0; t < fn->ntmp; t++) {
+            edist[t] = edist[t] + 1.0f;
+        }
+
+        // registers have minimum estimated distance, don't spill them
+        for (int t = 0; t < Tmp0; t++) {
+            edist[t] = -FLT_MAX;
+        }
+
+        if (rtype(i->to) == RTmp) {
+            edist[i->to.val] = -1.0f;
+        }
+
+        for (int a = 0; a < 2; a++) {
+            switch (rtype(i->arg[a])) {
+                case RTmp:
+                    edist[i->arg[a].val] = 1.0f;
+                    break;
+                case RMem:
+                    const Mem* m = &fn->mem[i->arg[a].val];
+                    if (rtype(m->base) == RTmp) { edist[m->base.val] = 1.0f; }
+                    if (rtype(m->index) == RTmp) { edist[m->index.val] = 1.0f; }
+                default:
+                    break;
+            }
+        }
+    }
+
+    // TODO: do phi ??
+}
+
+// requires rpo, live, prof, isel
 void nextuse(const Fn* const fn_) {
     fn = fn_;
 
@@ -243,6 +297,10 @@ void nextuse(const Fn* const fn_) {
                 ilpush(&wl, blk->pred[i]->id);
             }
         }
+    }
+
+    for (Blk* blk = fn->start; blk; blk = blk->link) {
+        filldist(blk);
     }
 
     if (debug['B']) {

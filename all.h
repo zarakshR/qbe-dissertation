@@ -238,6 +238,7 @@ struct Ins {
 	uint cls:2;
 	Ref to;
 	Ref arg[2];
+	float* edist; // array of est. distance, indexed by tmp id
 };
 
 struct Phi {
@@ -268,6 +269,7 @@ struct Blk {
 	struct {
 		enum J type;
 		Ref arg;
+		float* edist;
 	} jmp; // terminating jmp
 	Blk *s1; // primary successor
 	Blk *s2; // secondary successor (else branch)
