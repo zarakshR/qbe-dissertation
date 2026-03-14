@@ -146,7 +146,7 @@ static float edtop(Blk* const blk, const int t) {
         case XXX:
             die("no liveprob info!");
         case NUDef:
-            return -1;
+            die("nudef but lptop is not 0");
         case NUUse:
             return blk->nextuse[t].fudist;
         default:
@@ -318,7 +318,15 @@ void nextuse(const Fn* const fn_) {
         fprintf(stderr, "\n> Estimated distance info:\n");
 
         for (const Blk* blk = fn->start; blk; blk = blk->link) {
-            fprintf(stderr, ">>%s:\n", blk->name);
+            fprintf(stderr, ">>%s:", blk->name);
+
+            if (blk->s1 && blk->s2) {
+                fprintf(stderr, "[%f @ %s; %f @ %s]\n", blk->s1prob, blk->s1->name, blk->s2prob, blk->s2->name);
+            } else if (blk->s1) {
+                fprintf(stderr, "[%f @ %s]\n", blk->s1prob, blk->s1->name);
+            } else {
+                fprintf(stderr, "[]\n");
+            }
 
             for (int t = Tmp0; t < fn->ntmp; t++) {
                 const NextUse nu = blk->nextuse[t];

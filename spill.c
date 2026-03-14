@@ -67,8 +67,8 @@ fillcost(Fn* fn) {
     }
 
     // set loop costs for each tmp
-    for (Blk* b = fn->start; b; b = b->link) {
-        for (Phi* p = b->phi; p; p = p->link) {
+    for (Blk* blk = fn->start; blk; blk = blk->link) {
+        for (Phi* p = blk->phi; p; p = p->link) {
             Tmp* dst = &fn->tmp[p->to.val];
             tmpuse(p->to, 0, 0, fn);
             // phi-defined tmps have sum of predecessors' loop costs added to them
@@ -78,12 +78,13 @@ fillcost(Fn* fn) {
             }
         }
 
-        for (Ins* i = b->ins; i < &b->ins[b->nins]; i++) {
-            tmpuse(i->to, 0, b->loop, fn);
-            tmpuse(i->arg[0], 1, b->loop, fn);
-            tmpuse(i->arg[1], 1, b->loop, fn);
+        for (Ins* i = blk->ins; i < &blk->ins[blk->nins]; i++) {
+            // cost here:
+            tmpuse(i->to, 0, blk->loop, fn);
+            tmpuse(i->arg[0], 1, blk->loop, fn);
+            tmpuse(i->arg[1], 1, blk->loop, fn);
         }
-        tmpuse(b->jmp.arg, 1, b->loop, fn);
+        tmpuse(blk->jmp.arg, 1, blk->loop, fn);
     }
 
     if (debug['S']) {
@@ -234,6 +235,7 @@ limit2(BSet* b1, int kint, int kflt, BSet* f, const float* const _edist) {
     bsunion(b1, b2);
 }
 
+// set every tmp in u to have r as avoid hint
 static void
 sethint(BSet* u, bits r) {
     int t;
@@ -341,6 +343,8 @@ merge(BSet* live, const Blk* blk, BSet* s, const Blk* succ) {
  * - Ocopy instructions to ensure register
  *   constraints
  */
+// TODO: use est.dist of previous instruction
+// TODO: double check branch prop calculation for loops
 void
 spill(Fn* fn) {
     int lvarg[2];
@@ -421,13 +425,14 @@ spill(Fn* fn) {
                 merge(live, blk, u, s2);
                 bsinter(w, u); // w &= u
             }
-            // prefer tmps that are phi args to (both) successors
+            // if 1 succesor: prefer tmps that are phi args to succesor
+            // if 2: prefer tmps that are phi args to (both) successors
             limit2(live, 0, 0, w, blk->jmp.edist);
         } else {
             // exit block
             bscopy(live, blk->out);
             if (rtype(blk->jmp.arg) == RCall) {
-                // if block ends in a call: add return register(s) to `live`
+                // if function ends in a call: add return register(s) to `live`
                 *(live->t) |= T.retregs(blk->jmp.arg, 0);
             }
         }
