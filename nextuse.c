@@ -33,7 +33,18 @@ static void fillusedefs(Blk* const blk) {
     for (const Ins* ins = blk->ins; ins < &blk->ins[blk->nins]; ins++) {
         for (int i = 0; i < 2; i++) {
             const Ref arg = ins->arg[i];
-            if (rtype(arg) == RTmp) { bsset(blk->uses, arg.val); }
+            switch (rtype(arg)) {
+                case RTmp:
+                    bsset(blk->uses, arg.val);
+                    break;
+                case RMem:
+                    const Mem* const m = &fn->mem[arg.val];
+                    if (rtype(m->base) == RTmp) { bsset(blk->uses, m->base.val); }
+                    if (rtype(m->index) == RTmp) { bsset(blk->uses, m->index.val); }
+                    break;
+                default:
+                    break;
+            }
         }
 
         const Ref to = ins->to;
