@@ -155,7 +155,8 @@ static float edtop(Blk* const blk, const int t) {
 }
 
 static float edbot(Blk* const blk, const int t) {
-    const float lpbot = blk->nextuse[t].lpbot;
+    if (blk->nextuse[t].lpbot == 0) { return -1; }
+
     float edbot = 0;
 
     if (blk->s1) {
@@ -168,9 +169,7 @@ static float edbot(Blk* const blk, const int t) {
         edbot += blk->s2prob * s2nu.edtop * s2nu.lptop;
     }
 
-    edbot = (lpbot == 0) ? -1 : edbot / lpbot;
-
-    return edbot;
+    return edbot / blk->nextuse[t].lpbot;
 }
 
 static int liveprobblk(Blk* const blk) {
