@@ -504,13 +504,14 @@ typedef enum {
 
 typedef struct IList IList;
 
-// TODO: don't actually need `n`
 struct IList {
 	Pool pool;
 	struct ILNode {
 		uint i;
+		struct ILNode* prev;
 		struct ILNode* next;
-	} * head;
+	} * head, * tail;
+	size_t size;
 };
 
 extern Typ *typ;
@@ -521,9 +522,10 @@ void *emalloc(size_t);
 void *alloc(size_t);
 void freeall(void);
 IList ilnew(Pool);
-void ilpush(IList*, uint);
+void ilappend(IList*, uint);
 uint ilpop(IList*);
 void ilfree(IList*);
+size_t ilsize(const IList*);
 void *vnew(ulong, size_t, Pool);
 void vfree(void *);
 void vgrow(void *, ulong);

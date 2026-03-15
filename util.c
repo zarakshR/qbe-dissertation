@@ -110,31 +110,78 @@ freeall()
 IList ilnew(const Pool pool) {
 	return (IList) {
 		.pool = pool,
-		.head = NULL
+		.head = NULL,
+		.tail = NULL,
+		.size = 0,
 	};
 }
 
-void ilpush(IList* const il, const uint i) {
+struct ILNode* make_node(const Pool pool, const uint i) {
+	void *(*make)(size_t) = (pool == PHeap) ? emalloc : alloc;
+
+	struct ILNode* const node = make(sizeof *node);
+	node->i = i;
+	node->prev = NULL;
+	node->next = NULL;
+	return node;
+}
+
+void ilappend(IList* const il, const uint i) {
 	void *(*make)(size_t) = (il->pool == PHeap) ? emalloc : alloc;
 
-	struct ILNode* const head = make(sizeof *il->head);
-	head->i = i;
-	head->next = il->head;
+	if (il->head == NULL) {
+		assert(il->tail == NULL);
+		il->head = make_node(il->pool, i);
+		il->tail = il->head;
+	} else {
+		struct ILNode* const node = make_node(il->pool, i);
+		node->prev = il->tail;
+		il->tail->next = node;
+		il->tail = node;
+	}
 
-	il->head = head;
+	il->size++;
 }
 
 uint ilpop(IList* const il) {
-	struct ILNode* head = il->head;
-	const int i = head->i;
-
-	il->head = head->next;
-
-	if (il->pool == PHeap) {
-		free(head);
+	if (il->head == NULL) {
+		die("pop of empty il");
 	}
 
+	uint i;
+
+	if (il->head == il->tail) {
+		assert(il->size == 1);
+
+		struct ILNode* const head = il->head;
+		i = head->i;
+
+		il->head = NULL;
+		il->tail = NULL;
+
+		if (il->pool == PHeap) {
+			free(head);
+		}
+	} else {
+		struct ILNode* const head = il->head;
+		i = head->i;
+
+		il->head = head->next;
+		if (il->head != NULL) {
+			il->head->prev = NULL;
+		}
+
+		if (il->pool == PHeap) {
+			free(head);
+		}
+	}
+
+	il->size--;
 	return i;
+}
+
+size_t ilsize(const IList* const il) {
+	return il->size;
 }
 
 void ilfree(IList* il) {
