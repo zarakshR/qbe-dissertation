@@ -174,7 +174,6 @@ static float edbot(Blk* const blk, const int t) {
 
 static int liveprobblk(Blk* const blk) {
     int changed = 0;
-    int count = 0; // TODO: remove
 
     for (int t = Tmp0; bsiter(blk->u, &t); t++) {
         const NextUse old = blk->nextuse[t];
@@ -184,7 +183,6 @@ static int liveprobblk(Blk* const blk) {
         new->lptop = lptop(blk, t);
 
         if (fabsf(new->lptop - old.lptop) > 0.0001f || fabsf(new->lpbot - old.lpbot) > 0.0001f) { changed = 1; }
-        count++;
     }
 
     return changed;
@@ -192,7 +190,6 @@ static int liveprobblk(Blk* const blk) {
 
 static int estdistblk(Blk* const blk) {
     int changed = 0;
-    int count = 0; // TODO: remove
 
     for (int t = Tmp0; bsiter(blk->u, &t); t++) {
         const NextUse old = blk->nextuse[t];
@@ -204,7 +201,6 @@ static int estdistblk(Blk* const blk) {
         if (fabsf(new->edbot - old.edbot) > 0.0001f || fabsf(new->edtop - old.edtop) > 0.0001f) {
             changed = 1;
         }
-        count++;
     }
 
     return changed;
@@ -258,8 +254,6 @@ static void filldist(Blk* const blk) {
             }
         }
     }
-
-    // TODO: do phi ??
 }
 
 // requires rpo, live, prof, isel

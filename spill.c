@@ -343,8 +343,6 @@ merge(BSet* live, const Blk* blk, BSet* s, const Blk* succ) {
  * - Ocopy instructions to ensure register
  *   constraints
  */
-// TODO: use est.dist of previous instruction
-// TODO: double check branch prop calculation for loops
 void
 spill(Fn* fn) {
     int lvarg[2];
