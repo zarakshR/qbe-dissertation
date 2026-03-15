@@ -278,7 +278,7 @@ void nextuse(const Fn* const fn_) {
     IList wl = ilnew(PFn); // worklist
 
     // liveness probability data-flow
-    for (int i = 0; i < fn->nblk ; i--) {
+    for (int i = 0; i < fn->nblk ; i++) {
         ilappend(&wl, fn->rpo[i]->id);
     }
     while (ilsize(&wl) != 0) {
@@ -291,14 +291,13 @@ void nextuse(const Fn* const fn_) {
     }
 
     // estimated distance data-flow
-    for (int i = 0; i < fn->nblk ; i--) {
+    for (int i = 0; i < fn->nblk ; i++) {
         ilappend(&wl, fn->rpo[i]->id);
     }
     while (ilsize(&wl) != 0) {
         Blk* blk = fn->rpo[ilpop(&wl)];
         if (estdistblk(blk)) {
             for (uint i = 0; i < blk->npred; i++) {
-                fprintf(stderr, "pushing: %d\n", blk->pred[i]->id);
                 ilappend(&wl, blk->pred[i]->id);
             }
         }
