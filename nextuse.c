@@ -228,7 +228,9 @@ static void filldist(Blk* const blk) {
         memcpy(i->edist, edist, width);
 
         for (int t = Tmp0; t < fn->ntmp; t++) {
-            edist[t] = edist[t] + 1.0f;
+            if (edist[t] != -1) {
+                edist[t] = edist[t] + 1.0f;
+            }
         }
 
         // registers have minimum estimated distance, don't spill them
