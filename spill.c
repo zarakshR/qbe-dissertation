@@ -120,11 +120,9 @@ static int tcmp0(const void* pa, const void* pb) {
     if (b_dist == -1) { return -1; }
     if (a_dist == -1) { return 1; }
 
-#define DIST_WEIGHT 1.0f
-#define COST_WEIGHT 1.0f
     if (profiled) {
-        const float a_score = (DIST_WEIGHT * a_dist) * (COST_WEIGHT * tmp[a].cost);
-        const float b_score = (DIST_WEIGHT * b_dist) * (COST_WEIGHT * tmp[b].cost);
+        const float a_score = a_dist * tmp[a].cost;
+        const float b_score = b_dist * tmp[b].cost;
 
         return b_score < a_score ? -1 : (a_score == b_score ? 0 : 1);
     } else {
